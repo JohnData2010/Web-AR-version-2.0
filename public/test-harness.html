@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AR Demo postMessage Test Harness</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        margin: 0;
+        padding: 12px;
+        background: #020617;
+        color: #e5e7eb;
+      }
+      h1 {
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+      .log {
+        margin-top: 10px;
+        padding: 8px;
+        border-radius: 8px;
+        background: #0b1120;
+        border: 1px solid #1f2937;
+        font-size: 12px;
+        max-height: 220px;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
+      iframe {
+        width: 100%;
+        max-width: 480px;
+        height: 640px;
+        border-radius: 16px;
+        border: 1px solid #1f2937;
+        overflow: hidden;
+      }
+      label {
+        font-size: 13px;
+        display: block;
+        margin-bottom: 6px;
+      }
+      input {
+        font-size: 13px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        border: 1px solid #4b5563;
+        background: #020617;
+        color: #e5e7eb;
+        width: 220px;
+      }
+      button {
+        margin-left: 6px;
+        padding: 5px 10px;
+        font-size: 13px;
+        border-radius: 4px;
+        border: 1px solid #4f46e5;
+        background: #4f46e5;
+        color: white;
+        cursor: pointer;
+      }
+      button:active {
+        transform: translateY(1px);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AR Demo postMessage Test Harness</h1>
+    <p style="font-size: 13px; color: #9ca3af;">
+      This page embeds the AR demo in an iframe and logs any
+      <code>AR_PROTO_COMPLETE</code> messages it receives.
+    </p>
+    <div style="margin-bottom: 10px;">
+      <label>
+        Condition:
+        <input id="condInput" type="number" min="1" max="8" value="1" />
+        <button id="reloadBtn" type="button">Reload iframe</button>
+      </label>
+    </div>
+    <iframe
+      id="demoFrame"
+      src="./index.html?cond=1"
+      title="AR Demo"
+      allow="camera; microphone"
+    ></iframe>
+    <div class="log" id="log"></div>
+    <script>
+      const logEl = document.getElementById("log");
+      function appendLog(msg) {
+        const now = new Date().toISOString();
+        logEl.textContent += "[" + now + "] " + msg + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      window.addEventListener("message", (event) => {
+        if (!event.data || event.data.type !== "AR_PROTO_COMPLETE") return;
+        appendLog("Received AR_PROTO_COMPLETE: " + JSON.stringify(event.data));
+      });
+
+      const reloadBtn = document.getElementById("reloadBtn");
+      const condInput = document.getElementById("condInput");
+      const iframe = document.getElementById("demoFrame");
+
+      reloadBtn.addEventListener("click", () => {
+        const cond = Number(condInput.value) || 1;
+        iframe.src = "./index.html?cond=" + cond;
+        appendLog("Reloaded iframe with cond=" + cond);
+      });
+    </script>
+  </body>
+</html>

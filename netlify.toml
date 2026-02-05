@@ -1,0 +1,24 @@
+# Netlify configuration for AR demo prototype
+[build]
+  # No build step needed - this is a static site
+  publish = "."
+  command = "echo 'No build step required'"
+
+[[redirects]]
+  # Redirect root to public/index.html
+  from = "/"
+  to = "/public/index.html"
+  status = 200
+
+[[redirects]]
+  # Serve test harness
+  from = "/test-harness"
+  to = "/public/test-harness.html"
+  status = 200
+
+# Headers for iframe embedding (Qualtrics compatibility)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "ALLOWALL"
+    Content-Security-Policy = "frame-ancestors *;"
