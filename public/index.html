@@ -766,6 +766,7 @@
       
       tryLoadMediaPipe();
     </script>
-    <script type="module" src="../src/main.js"></script>
+    <!-- Use absolute path so Vercel can find the module at /src/main.js -->
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
