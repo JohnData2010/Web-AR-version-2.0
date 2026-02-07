@@ -148,6 +148,11 @@
         line-height: 1.5;
       }
 
+      .screen-subtitle-intro {
+        color: #4b5563;
+        font-weight: 450;
+      }
+
       .card {
         border-radius: var(--card-radius);
         border: 1px solid var(--border-subtle);
@@ -182,11 +187,138 @@
         color: #111827; /* darker label so line headings are clearly readable */
       }
 
+      /* iOS-style grouped details (privacy policy) */
+      .details-group {
+        background: #f2f2f7;
+        border-radius: 12px;
+        overflow: hidden;
+        margin: 0;
+      }
+
+      .details-row {
+        background: #ffffff;
+        padding: 14px 16px;
+        border-bottom: 0.5px solid rgba(60, 60, 67, 0.12);
+        line-height: 1.5;
+      }
+
+      .details-row:last-child {
+        border-bottom: none;
+      }
+
+      .details-row-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #1d1d1f;
+        margin-bottom: 4px;
+      }
+
+      .details-row-desc {
+        font-size: 13px;
+        color: #3a3a3c;
+        line-height: 1.45;
+      }
+
+      .details-row-desc + .details-row-desc {
+        margin-top: 8px;
+      }
+
+      .details-row-desc * {
+        color: inherit;
+      }
+
+      /* iOS-style details view: summary, grouped sections, callouts */
+      .details-summary {
+        font-size: 13px;
+        color: var(--fg-muted);
+        line-height: 1.5;
+      }
+
+      .details-content .details-group {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 14px;
+        background: #fff;
+        overflow: hidden;
+      }
+
+      .details-content .details-row {
+        padding: 12px 12px;
+        border-top: 1px solid rgba(15, 23, 42, 0.08);
+      }
+
+      .details-content .details-row:first-child {
+        border-top: none;
+      }
+
+      .details-title {
+        font-size: 12px;
+        font-weight: 650;
+        color: #111827;
+        margin-bottom: 6px;
+      }
+
+      .details-text {
+        font-size: 13px;
+        color: #111827;
+        line-height: 1.55;
+      }
+
+      .details-text p {
+        margin: 0 0 10px 0;
+      }
+
+      .details-bullets {
+        margin: 6px 0 10px 18px;
+        padding: 0;
+      }
+
+      .details-footnote {
+        font-size: 11px;
+        color: var(--fg-muted);
+        margin-top: 6px;
+      }
+
+      .details-reminder {
+        font-size: 12px;
+        color: var(--fg-muted);
+        line-height: 1.5;
+        margin-top: 14px;
+        margin-bottom: 0;
+      }
+
+      .details-callout {
+        border-radius: 12px;
+        padding: 10px 10px;
+        background: rgba(0, 122, 255, 0.08);
+        border: 1px solid rgba(0, 122, 255, 0.16);
+      }
+
+      .details-callout-label {
+        font-size: 11px;
+        font-weight: 650;
+        color: #0f172a;
+        margin-bottom: 4px;
+      }
+
+      .details-callout-text {
+        font-size: 13px;
+        color: #111827;
+        line-height: 1.5;
+      }
+
+      .details-explain {
+        margin-top: 10px;
+        padding: 10px 10px;
+        border-radius: 12px;
+        background: rgba(17, 24, 39, 0.04);
+        border: 1px solid rgba(17, 24, 39, 0.08);
+      }
+
       .pill-row {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
-        margin-top: 6px;
+        margin-top: 14px;
       }
 
       .pill {
@@ -619,6 +751,30 @@
         color: #6b7280;
       }
 
+      /* Subtle condition badge for researchers; minimal visual weight for participants */
+      .condition-badge {
+        width: auto;
+        height: auto;
+        min-height: 22px;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        color: #94a3b8;
+        background: rgba(241, 245, 249, 0.6);
+        border: 1px solid rgba(203, 213, 225, 0.5);
+        border-radius: 8px;
+        padding: 4px 8px;
+        min-width: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .condition-badge-debug {
+        font-size: 11px;
+        font-weight: 600;
+      }
+
       @media (max-width: 480px) {
         .app-shell {
           border-radius: 24px;
@@ -694,11 +850,10 @@
               <div class="app-logo-inner">AR</div>
             </div>
             <div>
-              <div class="app-name">FacePlay Demo</div>
-              <div class="app-meta">Preview filter · Short demo</div>
+              <div class="app-name">Face-Filter Demo</div>
             </div>
           </div>
-          <div class="exit-icon" id="headerStatus">●</div>
+          <div class="condition-badge exit-icon" id="headerStatus" aria-hidden="true">–</div>
         </header>
         <main class="app-body" id="appBody"></main>
       </div>
@@ -709,7 +864,7 @@
     <template id="social-ui-template">
       <div class="demo-social-ui">
         <div class="ui-top">
-          <div class="filter-name">Dreamy Blush</div>
+          <div class="filter-name">Cat ears</div>
           <svg width="26" height="26" fill="none" style="opacity:0.64" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="13" r="13" fill="#191919"/><g><rect x="8" y="8" width="10" height="10" rx="2" stroke="#FAFAFA" stroke-width="2.2"/></g></svg>
         </div>
         <div class="scan-line"></div>

@@ -37,20 +37,18 @@ function init() {
 
   const headerStatus = document.getElementById("headerStatus");
   if (headerStatus) {
-    if (!debug) {
-      headerStatus.style.display = "none";
-      headerStatus.setAttribute("aria-hidden", "true");
-    } else {
-      const ok = validation.valid;
+    headerStatus.textContent = `C${condition.condition_id}`;
+    headerStatus.title = `Condition ${condition.condition_id}`;
+    headerStatus.style.display = "inline-flex";
 
-      headerStatus.style.display = "inline-flex";
+    if (debug) {
+      const ok = validation.valid;
       headerStatus.setAttribute("aria-hidden", "false");
       headerStatus.setAttribute("role", "note");
-
+      headerStatus.classList.add("condition-badge-debug");
       headerStatus.textContent = ok
         ? `Cond ${condition.condition_id}`
         : `Cond ${condition.condition_id} ⚠`;
-
       headerStatus.style.color = ok ? "#065f46" : "#92400e";
       headerStatus.style.borderColor = ok
         ? "rgba(34, 197, 94, 0.45)"
@@ -58,12 +56,17 @@ function init() {
       headerStatus.style.background = ok
         ? "rgba(34, 197, 94, 0.12)"
         : "rgba(245, 158, 11, 0.12)";
-
       headerStatus.title = ok
         ? `Condition ${condition.condition_id}`
         : `Condition ${condition.condition_id} (param mismatch: ${validation.mismatches.join(
             ", "
           )})`;
+    } else {
+      headerStatus.setAttribute("aria-hidden", "true");
+      headerStatus.classList.remove("condition-badge-debug");
+      headerStatus.style.color = "";
+      headerStatus.style.borderColor = "";
+      headerStatus.style.background = "";
     }
   }
 

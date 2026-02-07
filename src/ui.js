@@ -39,13 +39,12 @@ export class AppUI {
     this.hasUsedCamera = false;
     this.hasChosenStyle = false;
 
-    // Filter state: track if filter is toggled on demo/camera
-    this.isFilterMuted = false;
+    // Soften effect tích hợp sẵn trong mỗi feature (không còn nút bật/tắt)
+    this.isFilterMuted = true;
     this.currentStyleVariant = 0;
 
     // Debug flags: chỉ log một lần khi face tracking nhận diện được
     this._faceDebugLogged = false;
-    this._loopDebugLogged = false;
 
     // Face tracking state (MediaPipe Face Landmarker)
     this.faceLandmarker = null;
@@ -53,6 +52,21 @@ export class AppUI {
     this.faceTrackingCtx = null;
     this.faceTrackingLoopHandle = null;
     this._faceLibPromise = null;
+
+    // Microphone state (for Blow Balloon style)
+    this.micStream = null;
+    this.micEnabled = false;
+    this.audioCtx = null;
+    this.micAnalyser = null;
+    this.micScriptProcessor = null;
+    this.micData = null;
+    this.micDataFloat = null;
+    this.micLevel = 0;
+    this.micBaseline = 0;
+    this._baselineFrames = 0;
+
+    // Balloon game state (style 1)
+    this.balloon = { value: 0, popped: false, popTimer: 0 };
 
     this.init();
   }
@@ -110,12 +124,12 @@ export class AppUI {
 
     const title = document.createElement("div");
     title.className = "screen-title";
-    title.textContent = "Try this AR face filter preview";
+    title.textContent = "Introduction";
 
     const subtitle = document.createElement("div");
-    subtitle.className = "screen-subtitle";
+    subtitle.className = "screen-subtitle screen-subtitle-intro";
     subtitle.textContent =
-      "In social apps, AR face filters use the camera to track your face in real time. In this short demo, you can try the camera or explore a preview and continue.";
+      "In social apps, AR face filters use the camera to track your face in real time. In this short demo, you can try the filter with your camera before answering the survey questions.";
 
     const card = document.createElement("div");
     card.className = "card card-contrast";
@@ -123,26 +137,20 @@ export class AppUI {
       '<div class="notice-heading">What to expect</div>' +
       '<div class="notice-text">' +
       '<strong>Step 1:</strong> Read a short data notice about how data related to this demo may be handled.<br>' +
-      '<strong>Step 2:</strong> Try a quick filter preview (camera is optional in this demo).<br>' +
+      '<strong>Step 2:</strong> Try a quick filter.<br>' +
       '<strong>Step 3:</strong> Return to the survey.' +
       '</div>' +
       '<div class="pill-row">' +
-      '<span class="pill pill-accent">Short demo</span>' +
-      '<span class="pill">In-browser</span>' +
-      '<span class="pill">Camera available</span>' +
+      '<span class="pill pill-accent">Camera permission</span>' +
+      '<span class="pill pill-accent">Microphone permission</span>' +
       "</div>";
-
-    const reassurance = document.createElement("div");
-    reassurance.className = "meta-text";
-    reassurance.style.marginTop = "10px";
-    reassurance.textContent = "You can return to the survey at any time.";
 
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
 
     const primary = document.createElement("button");
     primary.className = "btn btn-primary";
-    primary.textContent = "Start demo (Step 1: data notice)";
+    primary.textContent = "Start demo";
     primary.addEventListener("click", () => {
       this.logger.addInteraction();
       this.toScreen(SCREENS.NOTICE);
@@ -150,7 +158,7 @@ export class AppUI {
 
     btnRow.appendChild(primary);
 
-    el.append(title, subtitle, card, reassurance, btnRow);
+    el.append(title, subtitle, card, btnRow);
     return el;
   }
 
@@ -161,23 +169,23 @@ export class AppUI {
 
     const title = document.createElement("div");
     title.className = "screen-title";
-    title.textContent = "Data Notice (Step 1 of 3)";
+    title.textContent = "Data Notice";
 
     const subtitle = document.createElement("div");
-    subtitle.className = "screen-subtitle";
+    subtitle.className = "screen-subtitle screen-subtitle-intro";
     subtitle.textContent =
-      "This short notice explains how information related to the AR face filter feature may be handled. You can view optional details if you'd like.";
+      "This short notice explains how data related to the AR face filter feature may be handled. For more information, tap 'View details'.";
 
     const card = document.createElement("div");
     card.className = "card card-contrast";
     const noticeHtml = `
       <div class="notice-heading">What this notice covers</div>
       <div class="notice-text">
-        <strong>Camera (same in all versions):</strong> Raw camera video is used to render the effect in real time.
+        <strong>Camera:</strong> Raw camera video is used to render the effect in real time.
         <ul class="notice-factors" style="padding-left: 18px; margin: 12px 0 0 0; list-style: disc;">
-          <li style="margin-bottom: 8px;"><span class="notice-line-label">(A – Third-party)</span> ${renderInlineMarkdown(this.condition.notice.tpSentence)}</li>
-          <li style="margin-bottom: 8px;"><span class="notice-line-label">(B – Identifiability)</span> ${renderInlineMarkdown(this.condition.notice.idSentence)}</li>
-          <li style="margin-bottom: 0;"><span class="notice-line-label">(C – Retention)</span> ${renderInlineMarkdown(this.condition.notice.rtSentence)}</li>
+          <li style="margin-bottom: 8px;"><span class="notice-line-label">(A - Third-party)</span> ${renderInlineMarkdown(this.condition.notice.tpSentence)}</li>
+          <li style="margin-bottom: 8px;"><span class="notice-line-label">(B - Identifiability)</span> ${renderInlineMarkdown(this.condition.notice.idSentence)}</li>
+          <li style="margin-bottom: 0;"><span class="notice-line-label">(C - Retention)</span> ${renderInlineMarkdown(this.condition.notice.rtSentence)}</li>
         </ul>
       </div>
     `;
@@ -187,7 +195,7 @@ export class AppUI {
     meta.className = "meta-text";
     meta.style.marginTop = "8px";
     meta.innerHTML =
-      "You'll be asked a few questions about this notice next.<br>This notice applies only to this short demo.";
+      "*Note: You will be asked questions about this notice after the demo.";
 
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
@@ -222,69 +230,94 @@ export class AppUI {
 
     const title = document.createElement("div");
     title.className = "screen-title";
-    title.textContent = "Details about camera and face data use";
+    title.textContent = "More details about this notice";
 
     // Intentionally no step badge / subtitle here to keep this page minimal.
 
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "details-content";
     card.innerHTML = `
-      <div class="notice-text details-list" style="line-height: 1.6;">
-        <div class="notice-subheading" style="font-weight: 600; margin-bottom: 8px;">
-          Same in all versions
-        </div>
-        <ul style="padding-left: 18px; margin: 0 0 12px 0; list-style: disc;">
-          <li style="margin-bottom: 12px;">
-            <strong>How the camera is used (same in all versions):</strong><br>
-            Raw camera video is processed in real time to render the effect. The raw camera video is not stored as part of this demo.
-          </li>
-          <li style="margin-bottom: 0;">
-            <strong>What “usage and performance data” means (same in all versions):</strong><br>
-            This may include which buttons you tap, how long you use the demo, and basic performance metrics (e.g., whether the effect runs smoothly). This does not include your raw camera video.
-          </li>
-        </ul>
-
-        <div class="notice-subheading" style="font-weight: 600; margin: 4px 0 8px 0;">
-          This version of the demo (varies by version)
-        </div>
-
-        <div class="details-factor" style="margin-bottom: 12px; padding-left: 4px; border-left: 3px solid rgba(0,0,0,0.12); margin-left: 4px;">
-          <strong>A — Third-party (Varies by version)</strong><br>
-          ${renderInlineMarkdown(this.condition.details.tpDetails)}
-          <br>
-          In other words: this refers to analytics and measurement data about how the filter is used (not the raw camera video).<br>
-          ${
-            this.condition.tp === "internal"
-              ? "In this version: usage analytics are handled only within the app and are not shared outside the app."
-              : "In this version: usage analytics are shared with third-party analytics and measurement partners."
-          }
-        </div>
-
-        <div class="details-factor" style="margin-bottom: 12px; padding-left: 4px; border-left: 3px solid rgba(0,0,0,0.12); margin-left: 4px;">
-          <strong>B — Identifiability (Varies by version)</strong><br>
-          ${renderInlineMarkdown(this.condition.details.idDetails)}
-          <br>
-          A “biometric template” means a unique pattern (for example, from face, hand, or voice signals) that can be used to recognise a person.<br>
-          ${
-            this.condition.id === "low"
-              ? "In this version: no unique biometric template is created."
-              : "In this version: a biometric template may be generated and could be used to identify you, especially when combined with other information."
-          }
-        </div>
-
-        <div class="details-factor" style="margin-bottom: 0; padding-left: 4px; border-left: 3px solid rgba(0,0,0,0.12); margin-left: 4px;">
-          <strong>C — Retention (Varies by version)</strong><br>
-          ${renderInlineMarkdown(this.condition.details.rtDetails)}
-          <br>
-          This refers to stored data such as usage and performance logs (not the raw camera video).<br>
-          ${
-            this.condition.rt === "immediate"
-              ? "In this version: stored data related to this feature are deleted immediately after the demo ends."
-              : "In this version: stored data related to this feature may be retained for up to 30 days unless you request deletion."
-          }
-        </div>
+  <div class="details-group">
+    <div class="details-row">
+      <div class="details-title">Camera</div>
+      <div class="details-text">
+        <p>
+          The demo uses your live camera feed so the effect can follow your face in real time (like social apps).
+        </p>
       </div>
-    `;
+    </div>
+
+    <div class="details-row">
+      <div class="details-title">Usage Analytics</div>
+      <div class="details-text">
+        <p>
+          "Usage analytics" means basic data about how the demo is used and whether it runs smoothly.
+        </p>
+        For example, it may include:
+        <ul class="details-bullets">
+          <li>which buttons you tap, which style you select, and how long you spend in the demo.</li>
+          <li>basic performance signals (e.g., whether the effect loads, delays, or errors).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="details-group" style="margin-top: 12px;">
+    <div class="details-row">
+      <div class="details-title">A - Third-party sharing</div>
+      <div class="details-text">
+        <div class="details-callout">
+          <div class="details-callout-text">
+            ${renderInlineMarkdown(this.condition.notice.tpSentence)}
+          </div>
+        </div>
+
+        <p style="margin-top:10px;">
+          "Third-party" means an organisation outside the app (for example, an analytics or measurement partner).
+          If sharing happens, it refers to usage analytics about how the feature is used - not the camera video.
+        </p>
+      </div>
+    </div>
+
+    <div class="details-row">
+      <div class="details-title">B - Data identifiability</div>
+      <div class="details-text">
+        <div class="details-callout">
+          <div class="details-callout-text">
+            ${renderInlineMarkdown(this.condition.notice.idSentence)}
+          </div>
+        </div>
+
+        <p style="margin-top:10px;">
+          "Identifiability" is about how easily data from the feature could be identified you as a person.
+        </p>
+
+        <p>
+          "Biometric template" means a unique pattern created from signals like face/hand/voice that could be used to recognise someone.
+        </p>
+      </div>
+    </div>
+
+    <div class="details-row">
+      <div class="details-title">C - Data retention</div>
+      <div class="details-text">
+        <div class="details-callout">
+          <div class="details-callout-text">
+            ${renderInlineMarkdown(this.condition.notice.rtSentence)}
+          </div>
+        </div>
+
+        <p style="margin-top:10px;">
+          "Retention" means how long stored feature data (including usage logs) is kept before it is deleted.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <p class="details-reminder">
+    <strong>Reminder:</strong> the camera video is processed live to render the effect; no sensitive data is stored in this demo.
+  </p>
+`;
 
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
@@ -340,11 +373,14 @@ export class AppUI {
 
     const placeholderVideo = document.createElement("img");
     placeholderVideo.src =
-      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 600'%3E%3Crect width='400' height='600' fill='%23e0f2fe'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%236b7280' font-family='system-ui' font-size='16'%3EDemo preview%3C/text%3E%3C/svg%3E";
-    placeholderVideo.alt = "Demo preview placeholder";
+      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 600'%3E%3Crect width='400' height='600' fill='%23e0f2fe'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%236b7280' font-family='system-ui' font-size='16'%3EDemo%3C/text%3E%3C/svg%3E";
+    placeholderVideo.alt = "Demo placeholder";
     placeholderVideo.style.cssText =
       "width:100%;height:100%;object-fit:cover;";
     placeholder.appendChild(placeholderVideo);
+    if (this.isFilterMuted) {
+      placeholder.style.filter = "grayscale(0.15) saturate(0.8)";
+    }
 
     // Real camera video
     const video = document.createElement("video");
@@ -411,22 +447,23 @@ export class AppUI {
     const styleBtn = document.createElement("button");
     styleBtn.className = "btn btn-secondary btn-small";
     styleBtn.id = "demoStyleButton";
-    styleBtn.textContent = "Switch style";
+    styleBtn.textContent = "Switch type";
     styleBtn.addEventListener("click", () => {
       this.logger.addInteraction({ demo: true });
       this.cycleStyle();
     });
 
-    const muteBtn = document.createElement("button");
-    muteBtn.className = "btn btn-secondary btn-small";
-    muteBtn.id = "demoMuteButton";
-    muteBtn.textContent = "Soften effect";
-    muteBtn.addEventListener("click", () => {
+    const micBtn = document.createElement("button");
+    micBtn.className = "btn btn-secondary btn-small";
+    micBtn.id = "demoMicButton";
+    micBtn.textContent = "Enable mic";
+    micBtn.style.display = "none";
+    micBtn.addEventListener("click", async () => {
       this.logger.addInteraction({ demo: true });
-      this.toggleFilterMute();
+      await this.toggleMicrophone();
     });
 
-    buttonRow.append(cameraBtn, styleBtn, muteBtn);
+    buttonRow.append(cameraBtn, micBtn, styleBtn);
     demoShell.appendChild(buttonRow);
 
     // CTA text
@@ -434,7 +471,7 @@ export class AppUI {
     ctaText.className = "demo-cta-text";
     ctaText.id = "demoCtaText";
     ctaText.textContent =
-      "Tap 'Use my camera' above to try the filter on yourself, or tap 'Switch style' to explore different effects on the demo preview.";
+      "Tap 'Use my camera' above to try the filter on yourself, or tap 'Switch type' to change features.";
     demoShell.appendChild(ctaText);
 
     // Hint text
@@ -454,7 +491,7 @@ export class AppUI {
     const badgeLink = document.createElement("a");
     badgeLink.className = "badge-link";
     badgeLink.href = "#";
-    badgeLink.textContent = "Review the privacy notice";
+    badgeLink.textContent = "Review the data notice";
     // Keep the “link” feel but make it visible.
     badgeLink.style.cssText =
       "display:inline-block;color:#0b5ed7;text-decoration:underline;font-weight:600;padding:6px 10px;border-radius:10px;";
@@ -594,7 +631,7 @@ export class AppUI {
 
     const heading = document.createElement("div");
     heading.className = "notice-heading";
-    heading.textContent = "Privacy notice reminder";
+    heading.textContent = "Data notice";
     heading.style.marginBottom = "10px";
 
     const text = document.createElement("div");
@@ -607,19 +644,19 @@ export class AppUI {
       "Your camera feed is processed in real time to render the effect. The raw camera video for this effect is not stored.";
     text.innerHTML = `
       <div style="margin-bottom: 12px; line-height: 1.5;">
-        <div style="font-weight: 700;">Camera (same in all versions)</div>
+        <div style="font-weight: 700;">Camera</div>
         <div>${cameraLine}</div>
       </div>
       <div style="margin-bottom: 12px; line-height: 1.5;">
-        <div style="font-weight: 700;">A — Third-party (varies by version)</div>
+        <div style="font-weight: 700;">A - Third-party</div>
         <div>${renderInlineMarkdown(this.condition.notice.tpSentence)}</div>
       </div>
       <div style="margin-bottom: 12px; line-height: 1.5;">
-        <div style="font-weight: 700;">B — Identifiability (varies by version)</div>
+        <div style="font-weight: 700;">B - Data identifiability</div>
         <div>${renderInlineMarkdown(this.condition.notice.idSentence)}</div>
       </div>
       <div style="margin-bottom: 0; line-height: 1.5;">
-        <div style="font-weight: 700;">C — Retention (varies by version)</div>
+        <div style="font-weight: 700;">C - Data retention</div>
         <div>${renderInlineMarkdown(this.condition.notice.rtSentence)}</div>
       </div>
     `;
@@ -652,9 +689,9 @@ export class AppUI {
 
   // Kiểm tra và cập nhật trạng thái nút Continue
   updateDemoGatingState() {
-    // Engagement gating (non-coercive): require ~30s in the demo after they start engaging
-    // (camera OR switching styles). Do not force camera permission.
-    const startedEngaging = this.hasUsedCamera || this.hasChosenStyle;
+    // Engagement gating (non-coercive): require ~30s in the demo after they tap "Use my camera".
+    // Only camera use starts the countdown; "Switch type" does not.
+    const startedEngaging = this.hasUsedCamera;
 
     // If they haven't engaged yet, don't start the countdown.
     if (!startedEngaging) {
@@ -705,7 +742,7 @@ export class AppUI {
           hint.textContent = `Continue will unlock in ${remainingSec}s.`;
         } else {
           hint.textContent =
-            "Please try the demo for at least 30 seconds (you may use your camera or explore styles on the preview). Then you can continue.";
+            "Tap 'Use my camera' above to start. Continue will unlock after 30 seconds.";
         }
       }
     }
@@ -717,49 +754,29 @@ export class AppUI {
     this.hasChosenStyle = true;
     this.updateDemoGatingState();
 
-    const labels = ["Cat ears + blush", "Sunglasses + heart", "Crown + stars"];
+    const labels = ["Cat ears", "Blow Balloon", "Dreamy Blush"];
     this.showStyleTag(labels[this.currentStyleVariant]);
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'cycle-style',hypothesisId:'H7',location:'src/ui.js:cycleStyle',message:'Style changed',data:{currentStyleVariant:this.currentStyleVariant,hasFaceLandmarker:!!this.faceLandmarker,usingCamera:this.usingCamera,hasCanvas:!!this.faceTrackingCanvas},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
-  }
 
-  // Bật/tắt filter mute (soften effect)
-  toggleFilterMute() {
-    this.isFilterMuted = !this.isFilterMuted;
-
-    const video = document.getElementById("demoCameraVideo");
-    const placeholder = document.getElementById("demoPlaceholder");
-    const muteBtn = document.getElementById("demoMuteButton");
-
-    if (this.isFilterMuted) {
-      // Soften: thêm blur + giảm saturation
-      if (video instanceof HTMLVideoElement) {
-        video.style.filter =
-          "brightness(1.1) saturate(1.2) contrast(1.05) blur(0.4px) sepia(0.1)";
-      }
-      if (placeholder) {
-        placeholder.style.filter = "grayscale(0.15) saturate(0.8)";
-      }
-      if (muteBtn) muteBtn.textContent = "Restore effect";
-    } else {
-      // Restore: xóa filter
-      if (video instanceof HTMLVideoElement) {
-        video.style.filter = "none";
-      }
-      if (placeholder) {
-        placeholder.style.filter = "none";
-      }
-      if (muteBtn) muteBtn.textContent = "Soften effect";
+    const micBtn = document.getElementById("demoMicButton");
+    if (micBtn) {
+      micBtn.style.display = this.currentStyleVariant === 1 ? "inline-flex" : "none";
     }
   }
 
-  // Hiển thị tag chỉ style hiện tại
+  // Cập nhật tên feature hiện tại (chỉ một khung .filter-name từ template, không tạo khung mới)
   showStyleTag(label) {
     const frame = document.getElementById("demoFrame");
     if (!frame) return;
 
+    const filterNameEl = frame.querySelector(".filter-name");
+    if (filterNameEl) {
+      filterNameEl.textContent = label;
+      const oldTag = frame.querySelector(".demo-style-tag");
+      if (oldTag) oldTag.remove();
+      return;
+    }
+
+    // Fallback nếu không có template .filter-name: tạo tag tạm
     let tag = frame.querySelector(".demo-style-tag");
     if (!tag) {
       tag = document.createElement("div");
@@ -784,6 +801,8 @@ export class AppUI {
     } catch (e) {}
     this.cameraStream = null;
     this.usingCamera = false;
+
+    this.stopMicrophone();
 
     const video = document.getElementById("demoCameraVideo");
     if (video instanceof HTMLVideoElement) {
@@ -823,6 +842,149 @@ export class AppUI {
       camBtn.textContent = "Use my camera";
       camBtn.disabled = false;
     }
+  }
+
+  async toggleMicrophone() {
+    if (this.micEnabled) {
+      this.stopMicrophone();
+      return;
+    }
+    await this.startMicrophone();
+  }
+
+  async startMicrophone() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("Microphone is not supported in this browser.");
+      return;
+    }
+    try {
+      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.audioCtx.state === "suspended") {
+        await this.audioCtx.resume();
+      }
+      this.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+      const source = this.audioCtx.createMediaStreamSource(this.micStream);
+      const silentGain = this.audioCtx.createGain();
+      silentGain.gain.value = 0;
+
+      if (typeof this.audioCtx.createScriptProcessor === "function") {
+        const bufferSize = 4096;
+        this.micScriptProcessor = this.audioCtx.createScriptProcessor(bufferSize, 1, 1);
+        this.micScriptProcessor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0);
+          let sum = 0;
+          for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+          const rms = Math.sqrt(sum / input.length);
+          if (this._baselineFrames < 10) {
+            this.micBaseline = (this.micBaseline * this._baselineFrames + rms) / (this._baselineFrames + 1);
+            this._baselineFrames++;
+          } else if (rms < this.micBaseline + 0.02) {
+            this.micBaseline = this.micBaseline * 0.98 + rms * 0.02;
+          }
+          let raw = Math.max(0, rms - (this.micBaseline + 0.002));
+          if (raw < 0.001 && rms > 0.0005) raw = rms;
+          const normalized = Math.min(1, raw / 0.03);
+          let level = this.micLevel * 0.7 + normalized * 0.3;
+          if (this.micLevel < 0.01 && rms > 0.001) level = Math.min(1, rms / 0.008);
+          this.micLevel = level;
+        };
+        source.connect(this.micScriptProcessor);
+        this.micScriptProcessor.connect(silentGain);
+      } else {
+        this.micAnalyser = this.audioCtx.createAnalyser();
+        this.micAnalyser.fftSize = 1024;
+        this.micDataFloat = new Float32Array(this.micAnalyser.fftSize);
+        source.connect(this.micAnalyser);
+        this.micAnalyser.connect(silentGain);
+      }
+      silentGain.connect(this.audioCtx.destination);
+      this.micEnabled = true;
+      this.micLevel = 0;
+      this.micBaseline = 0;
+      this._baselineFrames = 0;
+      const micBtn = document.getElementById("demoMicButton");
+      if (micBtn) micBtn.textContent = "Mic on";
+      // #region agent log
+      const audioTracks = this.micStream.getAudioTracks();
+      fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:startMicrophone", message: "mic started", data: { micEnabled: this.micEnabled, audioCtxState: this.audioCtx?.state, sampleRate: this.audioCtx?.sampleRate, audioTracks: audioTracks?.length, trackEnabled: audioTracks?.[0]?.enabled, trackMuted: audioTracks?.[0]?.muted }, timestamp: Date.now(), hypothesisId: "H1_H2_H3" }) }).catch(() => {});
+      // #endregion
+    } catch (e) {
+      // #region agent log
+      fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:startMicrophone", message: "mic start failed", data: { err: String(e?.message || e) }, timestamp: Date.now(), hypothesisId: "H2" }) }).catch(() => {});
+      // #endregion
+      console.error("Microphone error:", e);
+      alert("Could not access microphone. Please allow microphone access.");
+    }
+  }
+
+  stopMicrophone() {
+    try {
+      if (this.micStream) this.micStream.getTracks().forEach((t) => t.stop());
+    } catch (e) {}
+    this.micStream = null;
+    this.micEnabled = false;
+    try {
+      if (this.micScriptProcessor) {
+        this.micScriptProcessor.disconnect();
+        this.micScriptProcessor = null;
+      }
+      this.audioCtx?.close?.();
+    } catch (e) {}
+    this.audioCtx = null;
+    this.micAnalyser = null;
+    this.micData = null;
+    this.micDataFloat = null;
+    const micBtn = document.getElementById("demoMicButton");
+    if (micBtn) micBtn.textContent = "Enable mic";
+  }
+
+  updateMicLevel() {
+    if (!this.micEnabled) {
+      this.micLevel = this.micLevel * 0.9;
+      // #region agent log
+      if (!this._micSkipLogCount) this._micSkipLogCount = 0;
+      this._micSkipLogCount++;
+      if (this._micSkipLogCount <= 3 || this._micSkipLogCount % 120 === 0) {
+        fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:updateMicLevel", message: "mic path skipped", data: { micEnabled: this.micEnabled, count: this._micSkipLogCount }, timestamp: Date.now(), hypothesisId: "H4" }) }).catch(() => {});
+      }
+      // #endregion
+      return this.micLevel;
+    }
+    if (this.micScriptProcessor) {
+      // #region agent log
+      if (!this._micSampleCount) this._micSampleCount = 0;
+      this._micSampleCount++;
+      if (this._micSampleCount <= 5 || this._micSampleCount % 60 === 0) {
+        fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:updateMicLevel", message: "mic level", data: { micLevel: Math.round(this.micLevel * 1000) / 1000, source: "scriptProcessor" }, timestamp: Date.now(), hypothesisId: "H5" }) }).catch(() => {});
+      }
+      // #endregion
+      return this.micLevel;
+    }
+    if (this.audioCtx?.state === "suspended") this.audioCtx.resume().catch(() => {});
+    if (!this.micAnalyser || !this.micDataFloat) return this.micLevel;
+    this.micAnalyser.getFloatTimeDomainData(this.micDataFloat);
+    let sum = 0;
+    for (let i = 0; i < this.micDataFloat.length; i++) sum += this.micDataFloat[i] * this.micDataFloat[i];
+    const rms = Math.sqrt(sum / this.micDataFloat.length);
+    if (this._baselineFrames < 10) {
+      this.micBaseline = (this.micBaseline * this._baselineFrames + rms) / (this._baselineFrames + 1);
+      this._baselineFrames++;
+    } else if (rms < this.micBaseline + 0.02) {
+      this.micBaseline = this.micBaseline * 0.98 + rms * 0.02;
+    }
+    let raw = Math.max(0, rms - (this.micBaseline + 0.002));
+    if (raw < 0.001 && rms > 0.0005) raw = rms;
+    const normalized = Math.min(1, raw / 0.03);
+    let level = this.micLevel * 0.7 + normalized * 0.3;
+    if (this.micLevel < 0.01 && rms > 0.001) level = Math.min(1, rms / 0.008);
+    this.micLevel = level;
+    return this.micLevel;
   }
 
   // Yêu cầu camera: bật/tắt robust, request camera, xử lý lỗi.
@@ -875,14 +1037,23 @@ export class AppUI {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: { ideal: "user" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false,
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "user" },
+            width: { ideal: 720 },
+            height: { ideal: 1280 },
+            frameRate: { ideal: 30, max: 30 },
+          },
+          audio: false,
+        });
+      } catch (portraitErr) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+      }
 
       this.cameraStream = stream;
       this.logger.setCameraPermission("granted");
@@ -901,7 +1072,7 @@ export class AppUI {
 
       const name = err?.name || "";
       let msg =
-        "We could not access your camera, so you are seeing a demo preview instead.";
+        "We could not access your camera, so you are seeing the demo without your camera.";
 
       if (name === "NotAllowedError" || name === "SecurityError") {
         msg =
@@ -1006,9 +1177,6 @@ export class AppUI {
 
     if (!this.faceLandmarker) {
       console.error("❌ Face Landmarker not available - overlay will not work");
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'ensure-face-tracking',hypothesisId:'H8',location:'src/ui.js:ensureFaceTracking',message:'FaceLandmarker not available',data:{hasFaceLandmarker:!!this.faceLandmarker,hasVideoEl:!!videoEl,hasFrameEl:!!frameEl},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
       return;
     }
 
@@ -1113,9 +1281,6 @@ export class AppUI {
         if (window.FaceLandmarker && window.FilesetResolver) {
           FaceLandmarker = window.FaceLandmarker;
           FilesetResolver = window.FilesetResolver;
-          // #region agent log
-          fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'face-landmarker-init',hypothesisId:'H4',location:'src/ui.js:initFaceLandmarker',message:'Using pre-loaded MediaPipe from window',data:{hasFaceLandmarker:!!window.FaceLandmarker,hasFilesetResolver:!!window.FilesetResolver},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion agent log
         } else {
           // Try dynamic import - use the correct CDN path
           try {
@@ -1140,22 +1305,12 @@ export class AppUI {
             }
             FaceLandmarker = visionModule.FaceLandmarker || visionModule.default?.FaceLandmarker;
             FilesetResolver = visionModule.FilesetResolver || visionModule.default?.FilesetResolver;
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'face-landmarker-init',hypothesisId:'H5',location:'src/ui.js:initFaceLandmarker',message:'Dynamic import of vision_bundle.js succeeded',data:{hasFaceLandmarker:!!FaceLandmarker,hasFilesetResolver:!!FilesetResolver},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion agent log
           } catch (importError1) {
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'face-landmarker-init',hypothesisId:'H3',location:'src/ui.js:initFaceLandmarker',message:'vision_bundle.js import failed, trying alternative',data:{error:String(importError1),url:'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js'},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion agent log
-            
             // Fallback: try loading via script tag
             await this._loadMediaPipeViaScript();
             if (window.FaceLandmarker && window.FilesetResolver) {
               FaceLandmarker = window.FaceLandmarker;
               FilesetResolver = window.FilesetResolver;
-              // #region agent log
-              fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'face-landmarker-init',hypothesisId:'H6',location:'src/ui.js:initFaceLandmarker',message:'Script tag fallback succeeded',data:{hasFaceLandmarker:!!FaceLandmarker,hasFilesetResolver:!!FilesetResolver},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion agent log
             } else {
               throw new Error("Could not load MediaPipe: vision_bundle.js not found and script tag approach failed");
             }
@@ -1190,24 +1345,18 @@ export class AppUI {
           },
           runningMode: "VIDEO",
           numFaces: 1,
-          minFaceDetectionConfidence: 0.5,
-          minFacePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minFaceDetectionConfidence: 0.4,
+          minFacePresenceConfidence: 0.4,
+          minTrackingConfidence: 0.4,
           outputFaceBlendshapes: false,
           outputFacialTransformationMatrixes: false,
         });
 
         console.log("✅ Face Landmarker initialized successfully");
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'face-landmarker-init',hypothesisId:'H1',location:'src/ui.js:initFaceLandmarker',message:'FaceLandmarker initialized successfully',data:{},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion agent log
       } catch (e) {
         console.error("❌ Failed to init Face Landmarker:", e);
         console.warn("⚠️ Face tracking will not be available");
         this.faceLandmarker = null;
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'face-landmarker-init',hypothesisId:'H2',location:'src/ui.js:initFaceLandmarker',message:'FaceLandmarker init failed',data:{error:String(e),stack:e?.stack},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion agent log
       }
     })();
 
@@ -1251,6 +1400,23 @@ export class AppUI {
     });
   }
 
+  // Cover transform: video dùng object-fit: cover nên cần scale + offset crop để map đúng
+  _getCoverTransform(videoW, videoH, canvasW, canvasH) {
+    const scale = Math.max(canvasW / videoW, canvasH / videoH);
+    const drawW = videoW * scale;
+    const drawH = videoH * scale;
+    const offsetX = (drawW - canvasW) / 2;
+    const offsetY = (drawH - canvasH) / 2;
+    return { scale, drawW, drawH, offsetX, offsetY };
+  }
+
+  _mapNormalizedToCanvasCover(p, videoW, videoH, canvasW, canvasH, mirror = true) {
+    const { scale, offsetX, offsetY } = this._getCoverTransform(videoW, videoH, canvasW, canvasH);
+    const x = (p.x * videoW) * scale - offsetX;
+    const y = (p.y * videoH) * scale - offsetY;
+    return mirror ? { x: canvasW - x, y } : { x, y };
+  }
+
   startFaceTrackingLoop(video, canvas) {
     if (this.faceTrackingLoopHandle) {
       cancelAnimationFrame(this.faceTrackingLoopHandle);
@@ -1270,9 +1436,9 @@ export class AppUI {
     let noDetectionCount = 0;
     let frameCount = 0;
     
-    // FIXED: Reduce smoothing for more responsive tracking
-    const smoothingFactor = 0.6; // Reduced from 0.75-0.85
-    const landmarkSmoothingFactor = 0.65;
+    // Smoothing nhẹ hơn: nhạy hơn, giống social app (0.25–0.35 / 0.30–0.45)
+    const smoothingFactor = 0.3;
+    const landmarkSmoothingFactor = 0.38;
     // FIXED: Reduce max frames to hold overlay when face lost
     const maxNoDetectionFrames = 10; // Reduced from 20-40
 
@@ -1281,18 +1447,18 @@ export class AppUI {
 
       if (!video.videoWidth || !video.videoHeight || video.paused) {
         // #region agent log
-        if (!this._loopDebugLogged) {
-          this._loopDebugLogged = true;
-          fetch('http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'face-tracking-loop',hypothesisId:'H9',location:'src/ui.js:startFaceTrackingLoop',message:'Video not ready',data:{videoWidth:video.videoWidth,videoHeight:video.videoHeight,paused:video.paused,hasFaceLandmarker:!!this.faceLandmarker},timestamp:Date.now()})}).catch(()=>{});
+        if (!this._loopSkipCount) this._loopSkipCount = 0;
+        this._loopSkipCount++;
+        if (this._loopSkipCount === 1 || this._loopSkipCount % 300 === 0) {
+          fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:faceTrackingLoop", message: "loop skip no video", data: { videoW: video.videoWidth, videoH: video.videoHeight, paused: video.paused, count: this._loopSkipCount }, timestamp: Date.now(), hypothesisId: "H6" }) }).catch(() => {});
         }
-        // #endregion agent log
+        // #endregion
         return;
       }
-      
-      // Reset debug flag when video is ready
-      this._loopDebugLogged = false;
 
       frameCount++;
+
+      this.updateMicLevel();
 
       // Clear previous frame
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1317,21 +1483,20 @@ export class AppUI {
             if (p.y > maxY) maxY = p.y;
           }
 
-          // FIXED: Proper coordinate mapping accounting for video display
-          // Get actual video display dimensions
-          const videoRect = video.getBoundingClientRect();
-          const canvasRect = canvas.getBoundingClientRect();
-          
-          // Calculate scale factors
-          const scaleX = canvasRect.width / video.videoWidth;
-          const scaleY = canvasRect.height / video.videoHeight;
-          
-          // Use actual video resolution for mapping
-          const padding = 0.08;
-          const rawX = (minX - padding) * video.videoWidth * scaleX;
-          const rawY = (minY - padding) * video.videoHeight * scaleY;
-          const rawW = (maxX - minX + 2 * padding) * video.videoWidth * scaleX;
-          const rawH = (maxY - minY + 2 * padding) * video.videoHeight * scaleY;
+          // Map bbox theo cover (video object-fit: cover) — scale + offset crop
+          const canvasW = canvas.width;
+          const canvasH = canvas.height;
+          const vW = video.videoWidth;
+          const vH = video.videoHeight;
+          const pad = 0.08;
+          const p1 = { x: Math.max(0, minX - pad), y: Math.max(0, minY - pad) };
+          const p2 = { x: Math.min(1, maxX + pad), y: Math.min(1, maxY + pad) };
+          const t1 = this._mapNormalizedToCanvasCover(p1, vW, vH, canvasW, canvasH, false);
+          const t2 = this._mapNormalizedToCanvasCover(p2, vW, vH, canvasW, canvasH, false);
+          const rawX = Math.min(t1.x, t2.x);
+          const rawY = Math.min(t1.y, t2.y);
+          const rawW = Math.abs(t2.x - t1.x);
+          const rawH = Math.abs(t2.y - t1.y);
 
           // Apply smoothing
           let box;
@@ -1349,49 +1514,50 @@ export class AppUI {
           lastBox = box;
           noDetectionCount = 0;
 
-          // Calculate face feature points from bounding box proportions
+          // Face feature points từ landmark thật (MediaPipe 468), fallback từ box
           const boxCenterX = (minX + maxX) / 2;
+          const boxCenterY = (minY + maxY) / 2;
           const boxTop = minY;
           const boxHeight = maxY - minY;
           const boxWidth = maxX - minX;
-          
-          // Feature points in normalized coordinates
-          const rawForeheadTop = { x: boxCenterX, y: boxTop + boxHeight * 0.05 };
-          const eyeY = boxTop + boxHeight * 0.35;
-          
-          // FIXED: Correct eye positions (no swap needed in normalized space)
-          const rawLeftEye = { x: boxCenterX - boxWidth * 0.18, y: eyeY };
-          const rawRightEye = { x: boxCenterX + boxWidth * 0.18, y: eyeY };
-          
-          const cheekY = boxTop + boxHeight * 0.60;
-          const rawLeftCheek = { x: boxCenterX - boxWidth * 0.22, y: cheekY };
-          const rawRightCheek = { x: boxCenterX + boxWidth * 0.22, y: cheekY };
-          
-          // Apply smoothing to feature points
-          let foreheadTop, leftEye, rightEye, leftCheek, rightCheek;
-          
+          const fallbackCenter = { x: boxCenterX, y: boxCenterY };
+          const pick = (i, fallback) =>
+            landmarks[i] != null
+              ? { x: landmarks[i].x, y: landmarks[i].y }
+              : fallback;
+
+          const rawForeheadTop = pick(10, { x: boxCenterX, y: boxTop + boxHeight * 0.08 });
+          const rawLeftEye = pick(33, { x: boxCenterX - boxWidth * 0.18, y: boxTop + boxHeight * 0.42 });
+          const rawRightEye = pick(263, { x: boxCenterX + boxWidth * 0.18, y: boxTop + boxHeight * 0.42 });
+          const rawLeftCheek = pick(234, { x: boxCenterX - boxWidth * 0.25, y: boxTop + boxHeight * 0.6 });
+          const rawRightCheek = pick(454, { x: boxCenterX + boxWidth * 0.25, y: boxTop + boxHeight * 0.6 });
+          const rawNoseTip = pick(1, fallbackCenter);
+          const rawMouth = pick(13, { x: boxCenterX, y: boxTop + boxHeight * 0.68 });
+
+          let foreheadTop, leftEye, rightEye, leftCheek, rightCheek, noseTip, mouth;
           if (lastFacePoints) {
             const smooth = (last, raw, factor) => ({
               x: last.x * factor + raw.x * (1 - factor),
               y: last.y * factor + raw.y * (1 - factor),
             });
-            
             foreheadTop = smooth(lastFacePoints.foreheadTop, rawForeheadTop, landmarkSmoothingFactor);
             leftEye = smooth(lastFacePoints.leftEye, rawLeftEye, landmarkSmoothingFactor);
             rightEye = smooth(lastFacePoints.rightEye, rawRightEye, landmarkSmoothingFactor);
             leftCheek = smooth(lastFacePoints.leftCheek, rawLeftCheek, landmarkSmoothingFactor);
             rightCheek = smooth(lastFacePoints.rightCheek, rawRightCheek, landmarkSmoothingFactor);
+            noseTip = smooth(lastFacePoints.noseTip || rawNoseTip, rawNoseTip, landmarkSmoothingFactor);
+            mouth = smooth(lastFacePoints.mouth || rawMouth, rawMouth, landmarkSmoothingFactor);
           } else {
             foreheadTop = rawForeheadTop;
             leftEye = rawLeftEye;
             rightEye = rawRightEye;
             leftCheek = rawLeftCheek;
             rightCheek = rawRightCheek;
+            noseTip = rawNoseTip;
+            mouth = rawMouth;
           }
-          
-          lastFacePoints = { foreheadTop, leftEye, rightEye, leftCheek, rightCheek };
-          
-          const facePoints = { foreheadTop, leftEye, rightEye, leftCheek, rightCheek };
+          lastFacePoints = { foreheadTop, leftEye, rightEye, leftCheek, rightCheek, noseTip, mouth };
+          const facePoints = { foreheadTop, leftEye, rightEye, leftCheek, rightCheek, noseTip, mouth };
 
           // Draw overlay
           this._drawFaceOverlayForStyle(ctx, canvas, box, landmarks, facePoints, video);
@@ -1468,24 +1634,14 @@ export class AppUI {
     
     ctx.save();
     
-    // FIXED: Single consistent mirroring approach
-    // Since video is already mirrored with scaleX(-1), we need to mirror our drawing too
-    // Map normalized point to canvas coordinates WITH mirroring
+    // Map normalized point to canvas: cover transform + mirror (video selfie đang lật)
+    const canvasW = canvas.width;
+    const canvasH = canvas.height;
+    const vW = video?.videoWidth || 720;
+    const vH = video?.videoHeight || 1280;
     const mapPoint = (p, videoEl) => {
       if (!p) return null;
-      
-      // Get scale factors
-      const scaleX = canvas.width / (videoEl?.videoWidth || 1280);
-      const scaleY = canvas.height / (videoEl?.videoHeight || 720);
-      
-      // Map normalized to pixel, then mirror X
-      const pixelX = p.x * (videoEl?.videoWidth || 1280) * scaleX;
-      const pixelY = p.y * (videoEl?.videoHeight || 720) * scaleY;
-      
-      return {
-        x: canvas.width - pixelX, // Mirror X coordinate
-        y: pixelY,
-      };
+      return this._mapNormalizedToCanvasCover(p, vW, vH, canvasW, canvasH, true);
     };
 
     // FIXED: Box center calculation after mirroring
@@ -1602,83 +1758,80 @@ export class AppUI {
         break;
       }
 
-      // Style 1: sunglasses + heart
+      // Style 1: Blow Balloon (mic volume)
       case 1: {
-        let glassY, glassH, glassW, glassX;
-        
-        if (facePoints && facePoints.leftEye && facePoints.rightEye) {
-          const leftEyePt = mapPoint(facePoints.leftEye, video);
-          const rightEyePt = mapPoint(facePoints.rightEye, video);
-          
-          if (leftEyePt && rightEyePt) {
-            const eyeCenterY = (leftEyePt.y + rightEyePt.y) / 2;
-            const eyeDistance = Math.abs(leftEyePt.x - rightEyePt.x);
-            glassY = eyeCenterY - h * 0.08;
-            glassH = h * 0.22;
-            glassW = eyeDistance * 1.4;
-            glassX = (leftEyePt.x + rightEyePt.x) / 2 - glassW / 2;
-          } else {
-            // Fallback
-            glassY = y + h * 0.38;
-            glassH = h * 0.22;
-            glassW = w * 0.7;
-            glassX = cx - glassW / 2;
+        const blow = this.updateMicLevel();
+
+        if (!this.balloon.popped) {
+          const TH = 0.04;
+          const inflate = blow > TH ? (blow * 0.1) : -0.003;
+          this.balloon.value = Math.max(0, Math.min(1, this.balloon.value + inflate));
+          // #region agent log
+          if (!this._balloonLogCount) this._balloonLogCount = 0;
+          this._balloonLogCount++;
+          if (this._balloonLogCount <= 5 || this._balloonLogCount % 45 === 0) {
+            fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:case1 balloon", message: "balloon state", data: { blow: Math.round(blow * 1000) / 1000, inflate: Math.round(inflate * 1000) / 1000, balloonValue: Math.round(this.balloon.value * 1000) / 1000 }, timestamp: Date.now(), hypothesisId: "H5" }) }).catch(() => {});
+          }
+          // #endregion
+          if (this.balloon.value >= 1) {
+            this.balloon.popped = true;
+            this.balloon.popTimer = 18;
           }
         } else {
-          // Fallback
-          glassY = y + h * 0.38;
-          glassH = h * 0.22;
-          glassW = w * 0.7;
-          glassX = cx - glassW / 2;
+          this.balloon.popTimer -= 1;
+          if (this.balloon.popTimer <= 0) {
+            this.balloon.popped = false;
+            this.balloon.value = 0.15;
+          }
         }
 
-        // Draw sunglasses frame
-        ctx.fillStyle = "rgba(15,23,42,0.76)";
-        ctx.strokeStyle = "rgba(148,163,184,0.9)";
-        ctx.lineWidth = 3;
-        const r = 14;
-        
-        ctx.beginPath();
-        ctx.moveTo(glassX + r, glassY);
-        ctx.lineTo(glassX + glassW - r, glassY);
-        ctx.quadraticCurveTo(glassX + glassW, glassY, glassX + glassW, glassY + r);
-        ctx.lineTo(glassX + glassW, glassY + glassH - r);
-        ctx.quadraticCurveTo(glassX + glassW, glassY + glassH, glassX + glassW - r, glassY + glassH);
-        ctx.lineTo(glassX + r, glassY + glassH);
-        ctx.quadraticCurveTo(glassX, glassY + glassH, glassX, glassY + glassH - r);
-        ctx.lineTo(glassX, glassY + r);
-        ctx.quadraticCurveTo(glassX, glassY, glassX + r, glassY);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        let mouthPt = null;
+        if (facePoints?.mouth) mouthPt = mapPoint(facePoints.mouth, video);
+        if (!mouthPt && facePoints?.noseTip) {
+          const nose = mapPoint(facePoints.noseTip, video);
+          mouthPt = nose ? { x: nose.x, y: nose.y + h * 0.18 } : null;
+        }
+        if (!mouthPt) mouthPt = { x: cx, y: y + h * 0.65 };
 
-        // Center divider
-        ctx.strokeStyle = "rgba(209,213,219,0.85)";
+        const baseR = h * 0.06;
+        const maxR = h * 0.16;
+        const rBalloon = baseR + (maxR - baseR) * this.balloon.value;
+        // #region agent log
+        if (!this._balloonDrawLogCount) this._balloonDrawLogCount = 0;
+        this._balloonDrawLogCount++;
+        if (this._balloonDrawLogCount <= 3 || this._balloonDrawLogCount % 60 === 0) {
+          fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:case1 draw", message: "balloon draw size", data: { h: Math.round(h), baseR: Math.round(baseR * 100) / 100, maxR: Math.round(maxR * 100) / 100, balloonValue: Math.round(this.balloon.value * 1000) / 1000, rBalloon: Math.round(rBalloon * 100) / 100 }, timestamp: Date.now(), hypothesisId: "H7" }) }).catch(() => {});
+        }
+        // #endregion
+
+        ctx.strokeStyle = "rgba(15,23,42,0.35)";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(cx, glassY + 6);
-        ctx.lineTo(cx, glassY + glassH - 6);
+        ctx.moveTo(mouthPt.x, mouthPt.y + rBalloon * 0.9);
+        ctx.lineTo(mouthPt.x, mouthPt.y + rBalloon * 2.2);
         ctx.stroke();
 
-        // Heart sticker
-        const heartX = cx + w * 0.3;
-        const heartY = y + h * 0.7;
-        const heartSize = w * 0.12;
-        
-        ctx.fillStyle = "#ef4444";
-        ctx.beginPath();
-        ctx.moveTo(heartX, heartY + heartSize * 0.3);
-        ctx.bezierCurveTo(
-          heartX, heartY,
-          heartX - heartSize * 0.5, heartY - heartSize * 0.3,
-          heartX, heartY - heartSize
-        );
-        ctx.bezierCurveTo(
-          heartX + heartSize * 0.5, heartY - heartSize * 0.3,
-          heartX, heartY,
-          heartX, heartY + heartSize * 0.3
-        );
-        ctx.fill();
+        if (!this.balloon.popped) {
+          ctx.fillStyle = "rgba(236,72,153,0.70)";
+          ctx.beginPath();
+          ctx.ellipse(mouthPt.x, mouthPt.y, rBalloon * 0.85, rBalloon, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.35)";
+          ctx.beginPath();
+          ctx.ellipse(mouthPt.x - rBalloon * 0.25, mouthPt.y - rBalloon * 0.25, rBalloon * 0.18, rBalloon * 0.28, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(15,23,42,0.65)";
+          ctx.font = "600 12px system-ui";
+          ctx.textAlign = "center";
+          ctx.fillText(`Blow: ${blow.toFixed(2)}`, mouthPt.x, mouthPt.y + rBalloon + 18);
+        } else {
+          ctx.strokeStyle = "rgba(236,72,153,0.85)";
+          ctx.lineWidth = 3;
+          const popR = rBalloon * 1.2;
+          ctx.beginPath();
+          ctx.arc(mouthPt.x, mouthPt.y, popR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
 
         break;
       }

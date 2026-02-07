@@ -86,7 +86,12 @@ export const CONDITIONS = {
 export function getConditionFromParams(search) {
   const params = new URLSearchParams(search || "");
   const condStr = params.get("cond");
-  let base = CONDITIONS[condStr ? Number(condStr) : 1] || CONDITIONS[1];
+  const condNum = condStr ? Number(condStr) : null;
+  const hasCondParam = condStr != null && condStr !== "";
+  const chosenId = hasCondParam && condNum >= 1 && condNum <= 8
+    ? condNum
+    : Math.floor(Math.random() * 8) + 1;
+  let base = CONDITIONS[chosenId] || CONDITIONS[1];
 
   const tp = params.get("tp");
   const id = params.get("id");
