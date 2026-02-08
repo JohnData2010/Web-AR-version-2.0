@@ -43,9 +43,6 @@ export class AppUI {
     this.isFilterMuted = true;
     this.currentStyleVariant = 0;
 
-    // Debug flags: chỉ log một lần khi face tracking nhận diện được
-    this._faceDebugLogged = false;
-
     // Face tracking state (MediaPipe Face Landmarker)
     this.faceLandmarker = null;
     this.faceTrackingCanvas = null;
@@ -59,7 +56,6 @@ export class AppUI {
     this.audioCtx = null;
     this.micAnalyser = null;
     this.micScriptProcessor = null;
-    this.micData = null;
     this.micDataFloat = null;
     this.micLevel = 0;
     this.micBaseline = 0;
@@ -67,6 +63,9 @@ export class AppUI {
 
     // Balloon game state (style 1)
     this.balloon = { value: 0, popped: false, popTimer: 0 };
+
+    // Spark Pop (style 2): sparkles bắn từ miệng khi hả miệng
+    this.dreamyBlushParticles = [];
 
     this.init();
   }
@@ -427,7 +426,14 @@ export class AppUI {
     chip.id = "demoStatusChip";
     chip.innerHTML = '<span class="chip-dot"></span><span>Camera off</span>';
 
+    const micChip = document.createElement("div");
+    micChip.className = "chip";
+    micChip.id = "demoMicStatusChip";
+    micChip.innerHTML = '<span class="chip-dot chip-dot-off"></span><span>Mic off</span>';
+    micChip.style.display = "none";
+
     controlsLeft.appendChild(chip);
+    controlsLeft.appendChild(micChip);
     controls.appendChild(controlsLeft);
     demoShell.appendChild(controls);
 
@@ -748,18 +754,25 @@ export class AppUI {
     }
   }
 
-  // Cycle qua các style overlay
+  // Cycle qua các style overlay (0–2: Cat ears, Blow Balloon, Spark Pop)
   cycleStyle() {
     this.currentStyleVariant = (this.currentStyleVariant + 1) % 3;
     this.hasChosenStyle = true;
     this.updateDemoGatingState();
 
-    const labels = ["Cat ears", "Blow Balloon", "Dreamy Blush"];
+    const labels = ["Cat ears", "Blow Balloon", "Spark Pop"];
     this.showStyleTag(labels[this.currentStyleVariant]);
 
     const micBtn = document.getElementById("demoMicButton");
     if (micBtn) {
       micBtn.style.display = this.currentStyleVariant === 1 ? "inline-flex" : "none";
+    }
+    const micChip = document.getElementById("demoMicStatusChip");
+    if (micChip) {
+      micChip.style.display = this.currentStyleVariant === 1 ? "inline-flex" : "none";
+      micChip.innerHTML = this.micEnabled
+        ? '<span class="chip-dot"></span><span>Live mic active</span>'
+        : '<span class="chip-dot chip-dot-off"></span><span>Mic off</span>';
     }
   }
 
@@ -884,14 +897,14 @@ export class AppUI {
           if (this._baselineFrames < 10) {
             this.micBaseline = (this.micBaseline * this._baselineFrames + rms) / (this._baselineFrames + 1);
             this._baselineFrames++;
-          } else if (rms < this.micBaseline + 0.02) {
+          } else if (rms < this.micBaseline + 0.025) {
             this.micBaseline = this.micBaseline * 0.98 + rms * 0.02;
           }
-          let raw = Math.max(0, rms - (this.micBaseline + 0.002));
-          if (raw < 0.001 && rms > 0.0005) raw = rms;
-          const normalized = Math.min(1, raw / 0.03);
-          let level = this.micLevel * 0.7 + normalized * 0.3;
-          if (this.micLevel < 0.01 && rms > 0.001) level = Math.min(1, rms / 0.008);
+          let raw = Math.max(0, rms - (this.micBaseline + 0.005));
+          if (raw < 0.002 && rms > 0.001) raw = rms * 0.5;
+          const normalized = Math.min(1, raw / 0.06);
+          let level = this.micLevel * 0.75 + normalized * 0.25;
+          if (this.micLevel < 0.01 && rms > 0.002) level = Math.min(1, rms / 0.018);
           this.micLevel = level;
         };
         source.connect(this.micScriptProcessor);
@@ -909,15 +922,10 @@ export class AppUI {
       this.micBaseline = 0;
       this._baselineFrames = 0;
       const micBtn = document.getElementById("demoMicButton");
-      if (micBtn) micBtn.textContent = "Mic on";
-      // #region agent log
-      const audioTracks = this.micStream.getAudioTracks();
-      fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:startMicrophone", message: "mic started", data: { micEnabled: this.micEnabled, audioCtxState: this.audioCtx?.state, sampleRate: this.audioCtx?.sampleRate, audioTracks: audioTracks?.length, trackEnabled: audioTracks?.[0]?.enabled, trackMuted: audioTracks?.[0]?.muted }, timestamp: Date.now(), hypothesisId: "H1_H2_H3" }) }).catch(() => {});
-      // #endregion
+      if (micBtn) micBtn.textContent = "Stop mic";
+      const micChip = document.getElementById("demoMicStatusChip");
+      if (micChip) micChip.innerHTML = '<span class="chip-dot"></span><span>Live mic active</span>';
     } catch (e) {
-      // #region agent log
-      fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:startMicrophone", message: "mic start failed", data: { err: String(e?.message || e) }, timestamp: Date.now(), hypothesisId: "H2" }) }).catch(() => {});
-      // #endregion
       console.error("Microphone error:", e);
       alert("Could not access microphone. Please allow microphone access.");
     }
@@ -938,34 +946,19 @@ export class AppUI {
     } catch (e) {}
     this.audioCtx = null;
     this.micAnalyser = null;
-    this.micData = null;
     this.micDataFloat = null;
     const micBtn = document.getElementById("demoMicButton");
     if (micBtn) micBtn.textContent = "Enable mic";
+    const micChip = document.getElementById("demoMicStatusChip");
+    if (micChip) micChip.innerHTML = '<span class="chip-dot chip-dot-off"></span><span>Mic off</span>';
   }
 
   updateMicLevel() {
     if (!this.micEnabled) {
       this.micLevel = this.micLevel * 0.9;
-      // #region agent log
-      if (!this._micSkipLogCount) this._micSkipLogCount = 0;
-      this._micSkipLogCount++;
-      if (this._micSkipLogCount <= 3 || this._micSkipLogCount % 120 === 0) {
-        fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:updateMicLevel", message: "mic path skipped", data: { micEnabled: this.micEnabled, count: this._micSkipLogCount }, timestamp: Date.now(), hypothesisId: "H4" }) }).catch(() => {});
-      }
-      // #endregion
       return this.micLevel;
     }
-    if (this.micScriptProcessor) {
-      // #region agent log
-      if (!this._micSampleCount) this._micSampleCount = 0;
-      this._micSampleCount++;
-      if (this._micSampleCount <= 5 || this._micSampleCount % 60 === 0) {
-        fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:updateMicLevel", message: "mic level", data: { micLevel: Math.round(this.micLevel * 1000) / 1000, source: "scriptProcessor" }, timestamp: Date.now(), hypothesisId: "H5" }) }).catch(() => {});
-      }
-      // #endregion
-      return this.micLevel;
-    }
+    if (this.micScriptProcessor) return this.micLevel;
     if (this.audioCtx?.state === "suspended") this.audioCtx.resume().catch(() => {});
     if (!this.micAnalyser || !this.micDataFloat) return this.micLevel;
     this.micAnalyser.getFloatTimeDomainData(this.micDataFloat);
@@ -978,11 +971,11 @@ export class AppUI {
     } else if (rms < this.micBaseline + 0.02) {
       this.micBaseline = this.micBaseline * 0.98 + rms * 0.02;
     }
-    let raw = Math.max(0, rms - (this.micBaseline + 0.002));
-    if (raw < 0.001 && rms > 0.0005) raw = rms;
-    const normalized = Math.min(1, raw / 0.03);
-    let level = this.micLevel * 0.7 + normalized * 0.3;
-    if (this.micLevel < 0.01 && rms > 0.001) level = Math.min(1, rms / 0.008);
+    let raw = Math.max(0, rms - (this.micBaseline + 0.005));
+    if (raw < 0.002 && rms > 0.001) raw = rms * 0.5;
+    const normalized = Math.min(1, raw / 0.06);
+    let level = this.micLevel * 0.75 + normalized * 0.25;
+    if (this.micLevel < 0.01 && rms > 0.002) level = Math.min(1, rms / 0.018);
     this.micLevel = level;
     return this.micLevel;
   }
@@ -1037,32 +1030,11 @@ export class AppUI {
     }
 
     try {
-      let stream;
-      // Trên mobile: không yêu cầu width/height để tránh camera crop/zoom (FOV tự nhiên)
-      const isMobileLike = window.innerWidth <= 768 || (navigator.maxTouchPoints > 0 && window.innerWidth < 900);
-      if (isMobileLike) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "user" } },
-          audio: false,
-        });
-      } else {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: "user" },
-              width: { ideal: 720 },
-              height: { ideal: 1280 },
-              frameRate: { ideal: 30, max: 30 },
-            },
-            audio: false,
-          });
-        } catch (portraitErr) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-            audio: false,
-          });
-        }
-      }
+      // Không yêu cầu width/height để tránh camera crop/zoom (FOV tự nhiên) trên cả web và mobile
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "user" } },
+        audio: false,
+      });
 
       this.cameraStream = stream;
       this.logger.setCameraPermission("granted");
@@ -1454,16 +1426,7 @@ export class AppUI {
     const loop = () => {
       this.faceTrackingLoopHandle = requestAnimationFrame(loop);
 
-      if (!video.videoWidth || !video.videoHeight || video.paused) {
-        // #region agent log
-        if (!this._loopSkipCount) this._loopSkipCount = 0;
-        this._loopSkipCount++;
-        if (this._loopSkipCount === 1 || this._loopSkipCount % 300 === 0) {
-          fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:faceTrackingLoop", message: "loop skip no video", data: { videoW: video.videoWidth, videoH: video.videoHeight, paused: video.paused, count: this._loopSkipCount }, timestamp: Date.now(), hypothesisId: "H6" }) }).catch(() => {});
-        }
-        // #endregion
-        return;
-      }
+      if (!video.videoWidth || !video.videoHeight || video.paused) return;
 
       frameCount++;
 
@@ -1570,20 +1533,8 @@ export class AppUI {
 
           // Draw overlay
           this._drawFaceOverlayForStyle(ctx, canvas, box, landmarks, facePoints, video);
-
-          if (!this._faceDebugLogged) {
-            this._faceDebugLogged = true;
-            console.log("✅ Drawing overlay - Style:", this.currentStyleVariant, "Box:", box);
-          }
         } else {
-          // No face detected
           noDetectionCount++;
-          
-          // Log occasional "no face" events
-          if (frameCount % 30 === 0 && noDetectionCount > 0) {
-            console.log("⚠️ No face detected for", noDetectionCount, "frames");
-          }
-          
           // Keep last overlay for a few frames to reduce flicker
           if (lastBox && lastFacePoints && noDetectionCount < maxNoDetectionFrames) {
             const alpha = 1 - (noDetectionCount / maxNoDetectionFrames);
@@ -1591,13 +1542,10 @@ export class AppUI {
             this._drawFaceOverlayForStyle(ctx, canvas, lastBox, null, lastFacePoints, video);
             ctx.globalAlpha = 1;
           } else {
-            // Clear tracking state
             lastBox = null;
             lastFacePoints = null;
             noDetectionCount = 0;
           }
-          
-          this._faceDebugLogged = false;
         }
       } catch (e) {
         console.error("❌ Face tracking error:", e);
@@ -1605,7 +1553,6 @@ export class AppUI {
     };
 
     this.faceTrackingLoopHandle = requestAnimationFrame(loop);
-    console.log("✅ Tracking loop started");
   }
 
   stopFaceTracking() {
@@ -1621,26 +1568,10 @@ export class AppUI {
         this.faceTrackingCanvas.height
       );
     }
-    this._faceDebugLogged = false;
   }
 
-  // FIXED: Complete rewrite of overlay drawing with proper mirroring
   _drawFaceOverlayForStyle(ctx, canvas, box, landmarks, facePoints = null, video = null) {
     const { x, y, w, h } = box;
-    
-    // Debug: Log canvas and box info (only once per style change)
-    if (!this._overlayDrawDebugLogged) {
-      this._overlayDrawDebugLogged = true;
-      console.log("🎨 Overlay drawing started:", {
-        canvasSize: { width: canvas.width, height: canvas.height },
-        box: { x, y, w, h },
-        style: this.currentStyleVariant,
-        videoSize: video ? { width: video.videoWidth, height: video.videoHeight } : null,
-        hasFacePoints: !!facePoints,
-        facePointsKeys: facePoints ? Object.keys(facePoints) : null
-      });
-    }
-    
     ctx.save();
     
     // Map normalized point to canvas: cover transform + mirror (video selfie đang lật)
@@ -1718,12 +1649,6 @@ export class AppUI {
 
         ctx.shadowColor = "rgba(249,115,22,0.8)";
         ctx.shadowBlur = 18;
-        
-        // Debug log for ear positions (only once per style change)
-        if (!this._overlayDrawDebugLogged) {
-          console.log("🎨 Drawing cat ears at:", { leftEarX, rightEarX, earY, earW, earH, canvasSize: { w: canvas.width, h: canvas.height } });
-        }
-        
         drawEar(leftEarX);
         drawEar(rightEarX);
 
@@ -1772,16 +1697,9 @@ export class AppUI {
         const blow = this.updateMicLevel();
 
         if (!this.balloon.popped) {
-          const TH = 0.04;
-          const inflate = blow > TH ? (blow * 0.1) : -0.003;
+          const TH = 0.08;
+          const inflate = blow > TH ? (blow * 0.055) : -0.002;
           this.balloon.value = Math.max(0, Math.min(1, this.balloon.value + inflate));
-          // #region agent log
-          if (!this._balloonLogCount) this._balloonLogCount = 0;
-          this._balloonLogCount++;
-          if (this._balloonLogCount <= 5 || this._balloonLogCount % 45 === 0) {
-            fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:case1 balloon", message: "balloon state", data: { blow: Math.round(blow * 1000) / 1000, inflate: Math.round(inflate * 1000) / 1000, balloonValue: Math.round(this.balloon.value * 1000) / 1000 }, timestamp: Date.now(), hypothesisId: "H5" }) }).catch(() => {});
-          }
-          // #endregion
           if (this.balloon.value >= 1) {
             this.balloon.popped = true;
             this.balloon.popTimer = 18;
@@ -1803,15 +1721,8 @@ export class AppUI {
         if (!mouthPt) mouthPt = { x: cx, y: y + h * 0.65 };
 
         const baseR = h * 0.06;
-        const maxR = h * 0.16;
+        const maxR = h * 0.24;
         const rBalloon = baseR + (maxR - baseR) * this.balloon.value;
-        // #region agent log
-        if (!this._balloonDrawLogCount) this._balloonDrawLogCount = 0;
-        this._balloonDrawLogCount++;
-        if (this._balloonDrawLogCount <= 3 || this._balloonDrawLogCount % 60 === 0) {
-          fetch("http://127.0.0.1:7243/ingest/7e4fd9ac-02f5-4cc9-9133-2c5edfde8585", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "ui.js:case1 draw", message: "balloon draw size", data: { h: Math.round(h), baseR: Math.round(baseR * 100) / 100, maxR: Math.round(maxR * 100) / 100, balloonValue: Math.round(this.balloon.value * 1000) / 1000, rBalloon: Math.round(rBalloon * 100) / 100 }, timestamp: Date.now(), hypothesisId: "H7" }) }).catch(() => {});
-        }
-        // #endregion
 
         ctx.strokeStyle = "rgba(15,23,42,0.35)";
         ctx.lineWidth = 2;
@@ -1832,7 +1743,8 @@ export class AppUI {
           ctx.fillStyle = "rgba(15,23,42,0.65)";
           ctx.font = "600 12px system-ui";
           ctx.textAlign = "center";
-          ctx.fillText(`Blow: ${blow.toFixed(2)}`, mouthPt.x, mouthPt.y + rBalloon + 18);
+          const balloonHint = this.micEnabled ? "Blow to inflate!" : "Enable mic to play";
+          ctx.fillText(balloonHint, mouthPt.x, mouthPt.y + rBalloon + 18);
         } else {
           ctx.strokeStyle = "rgba(236,72,153,0.85)";
           ctx.lineWidth = 3;
@@ -1845,73 +1757,144 @@ export class AppUI {
         break;
       }
 
-      // Style 2: crown + stars
+      // Style 2: Spark Pop (open mouth → sparkles burst)
       case 2: {
-        // Crown position
-        let crownX, crownY, crownW, crownH;
-        
-        if (facePoints && facePoints.foreheadTop) {
-          const forehead = mapPoint(facePoints.foreheadTop, video);
-          if (forehead) {
-            crownW = w * 0.55;
-            crownH = h * 0.18;
-            crownX = forehead.x - crownW / 2;
-            crownY = forehead.y - crownH - h * 0.05;
-          } else {
-            // Fallback
-            crownW = w * 0.55;
-            crownH = h * 0.18;
-            crownX = cx - crownW / 2;
-            crownY = top - crownH - h * 0.1;
-          }
-        } else {
-          // Fallback
-          crownW = w * 0.55;
-          crownH = h * 0.18;
-          crownX = cx - crownW / 2;
-          crownY = top - crownH - h * 0.1;
-        }
+        const clamp01 = (v) => Math.max(0, Math.min(1, v));
+        const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+        const lmPt = (i) => (landmarks && landmarks[i] ? mapPoint(landmarks[i], video) : null);
 
-        // Draw crown
-        const grad = ctx.createLinearGradient(crownX, crownY, crownX, crownY + crownH);
-        grad.addColorStop(0, "#fbbf24");
-        grad.addColorStop(1, "#f59e0b");
-        ctx.fillStyle = grad;
-        
-        ctx.beginPath();
-        ctx.moveTo(crownX, crownY + crownH);
-        ctx.lineTo(crownX + crownW * 0.2, crownY + crownH * 0.3);
-        ctx.lineTo(crownX + crownW * 0.35, crownY + crownH);
-        ctx.lineTo(crownX + crownW * 0.5, crownY);
-        ctx.lineTo(crownX + crownW * 0.65, crownY + crownH);
-        ctx.lineTo(crownX + crownW * 0.8, crownY + crownH * 0.3);
-        ctx.lineTo(crownX + crownW, crownY + crownH);
-        ctx.closePath();
-        ctx.fill();
-        
-        ctx.strokeStyle = "rgba(254,243,199,0.9)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        const lEye = lmPt(33);
+        const rEye = lmPt(263);
+        const upperLip = lmPt(13);
+        const lowerLip = lmPt(14);
 
-        // Stars
-        ctx.fillStyle = "#fbbf24";
-        const drawStar = (sx, sy, size) => {
+        const leftCheekPt = facePoints?.leftCheek ? mapPoint(facePoints.leftCheek, video) : null;
+        const rightCheekPt = facePoints?.rightCheek ? mapPoint(facePoints.rightCheek, video) : null;
+        const mouthCenter = facePoints?.mouth ? mapPoint(facePoints.mouth, video) : null;
+
+        const cheekR = h * 0.08;
+        const drawCheekGlow = (cxCheek, cyCheek) => {
+          const grad = ctx.createRadialGradient(cxCheek, cyCheek, 0, cxCheek, cyCheek, cheekR);
+          grad.addColorStop(0, "rgba(255,182,193,0.5)");
+          grad.addColorStop(0.5, "rgba(236,72,153,0.25)");
+          grad.addColorStop(1, "rgba(248,113,113,0)");
+          ctx.fillStyle = grad;
           ctx.beginPath();
-          for (let i = 0; i < 5; i++) {
-            const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
-            const r = i % 2 === 0 ? size : size * 0.4;
-            const px = sx + r * Math.cos(angle);
-            const py = sy + r * Math.sin(angle);
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          }
-          ctx.closePath();
+          ctx.ellipse(cxCheek, cyCheek, cheekR * 1.2, cheekR, 0, 0, Math.PI * 2);
           ctx.fill();
         };
+        const drawSmallSparkle = (sx, sy, size, rot) => {
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(rot);
+          ctx.beginPath();
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.35, -size * 0.35);
+          ctx.lineTo(size, 0);
+          ctx.lineTo(size * 0.35, size * 0.35);
+          ctx.lineTo(0, size);
+          ctx.lineTo(-size * 0.35, size * 0.35);
+          ctx.lineTo(-size, 0);
+          ctx.lineTo(-size * 0.35, -size * 0.35);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        };
+        const cheekSparkleR = w * 0.018;
+        const rotT = performance.now() * 0.001;
+        if (leftCheekPt && rightCheekPt) {
+          drawCheekGlow(leftCheekPt.x, leftCheekPt.y);
+          drawCheekGlow(rightCheekPt.x, rightCheekPt.y);
+          ctx.fillStyle = "rgba(236,72,153,0.75)";
+          ctx.globalAlpha = 0.9;
+          drawSmallSparkle(leftCheekPt.x, leftCheekPt.y, cheekSparkleR, rotT);
+          drawSmallSparkle(rightCheekPt.x, rightCheekPt.y, cheekSparkleR, rotT * 1.1);
+          ctx.globalAlpha = 1;
+        } else {
+          const cheekY = y + h * 0.65;
+          const cheekOffsetX = w * 0.22;
+          [cx - cheekOffsetX, cx + cheekOffsetX].forEach((px) => {
+            drawCheekGlow(px, cheekY);
+            ctx.fillStyle = "rgba(236,72,153,0.75)";
+            ctx.globalAlpha = 0.9;
+            drawSmallSparkle(px, cheekY, cheekSparkleR, rotT);
+            ctx.globalAlpha = 1;
+          });
+        }
 
-        drawStar(cx - w * 0.35, y + h * 0.3, w * 0.08);
-        drawStar(cx + w * 0.35, y + h * 0.3, w * 0.08);
-        drawStar(cx, y + h * 0.7, w * 0.06);
+        let mouthNorm = 0;
+        if (upperLip && lowerLip) {
+          const gap = dist(upperLip, lowerLip);
+          const eyeDist = lEye && rEye ? dist(lEye, rEye) : w * 0.25;
+          mouthNorm = clamp01((gap / eyeDist - 0.06) / 0.18);
+        }
+
+        const base = mouthCenter || { x: cx, y: y + h * 0.62 };
+        const speed = 1.8 + mouthNorm * 2;
+        const maxLife = 55;
+
+        if (mouthNorm > 0.1 && this.dreamyBlushParticles.length < 100) {
+          const n = Math.floor(2 + mouthNorm * 4);
+          for (let i = 0; i < n; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            this.dreamyBlushParticles.push({
+              x: base.x,
+              y: base.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed - 0.5,
+              life: 0,
+              maxLife,
+              size: w * (0.012 + Math.random() * 0.015),
+            });
+          }
+        }
+
+        const drawSparkle = (sx, sy, size, rot) => {
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(rot);
+          ctx.beginPath();
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.35, -size * 0.35);
+          ctx.lineTo(size, 0);
+          ctx.lineTo(size * 0.35, size * 0.35);
+          ctx.lineTo(0, size);
+          ctx.lineTo(-size * 0.35, size * 0.35);
+          ctx.lineTo(-size, 0);
+          ctx.lineTo(-size * 0.35, -size * 0.35);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        };
+
+        const kept = [];
+        const t = performance.now() / 1000;
+        ctx.fillStyle = "rgba(236,72,153,0.9)";
+        for (const p of this.dreamyBlushParticles) {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life += 1;
+          if (p.life > p.maxLife) continue;
+          const fade = 1 - p.life / p.maxLife;
+          const s = p.size * fade;
+          if (s < 0.5) continue;
+          ctx.save();
+          ctx.globalAlpha = fade;
+          drawSparkle(p.x, p.y, s, t + p.life * 0.1);
+          ctx.restore();
+          kept.push(p);
+        }
+        this.dreamyBlushParticles = kept;
+
+        if (mouthNorm < 0.12) {
+          ctx.save();
+          ctx.globalAlpha = 0.7;
+          ctx.fillStyle = "rgba(17,24,39,0.6)";
+          ctx.textAlign = "center";
+          ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto";
+          ctx.fillText("Open your mouth", base.x, base.y + h * 0.18);
+          ctx.restore();
+        }
 
         break;
       }
