@@ -1038,21 +1038,30 @@ export class AppUI {
 
     try {
       let stream;
-      try {
+      // Trên mobile: không yêu cầu width/height để tránh camera crop/zoom (FOV tự nhiên)
+      const isMobileLike = window.innerWidth <= 768 || (navigator.maxTouchPoints > 0 && window.innerWidth < 900);
+      if (isMobileLike) {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "user" },
-            width: { ideal: 720 },
-            height: { ideal: 1280 },
-            frameRate: { ideal: 30, max: 30 },
-          },
+          video: { facingMode: { ideal: "user" } },
           audio: false,
         });
-      } catch (portraitErr) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        });
+      } else {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: "user" },
+              width: { ideal: 720 },
+              height: { ideal: 1280 },
+              frameRate: { ideal: 30, max: 30 },
+            },
+            audio: false,
+          });
+        } catch (portraitErr) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          });
+        }
       }
 
       this.cameraStream = stream;
