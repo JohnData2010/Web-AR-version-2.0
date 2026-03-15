@@ -1,4 +1,4 @@
-// All condition text for the 2×2×2 design.
+// All condition text for the 2×2×2 design (+ photo-access variation).
 // A (Third-party): A1 = internal, A2 = external
 // B (Identifiability): B1 = low, B2 = high
 // C (Retention): C1 = immediate, C2 = 30 days
@@ -22,6 +22,7 @@ export const CONDITIONS = {
     tp: "internal",
     id: "low",
     rt: "immediate",
+    photo: "none",
     notice: { tpSentence: A1, idSentence: B1, rtSentence: C1 },
     details: { tpDetails: A1, idDetails: B1, rtDetails: C1 },
   },
@@ -30,6 +31,7 @@ export const CONDITIONS = {
     tp: "internal",
     id: "low",
     rt: "stored",
+    photo: "none",
     notice: { tpSentence: A1, idSentence: B1, rtSentence: C2 },
     details: { tpDetails: A1, idDetails: B1, rtDetails: C2 },
   },
@@ -38,6 +40,7 @@ export const CONDITIONS = {
     tp: "internal",
     id: "high",
     rt: "immediate",
+    photo: "none",
     notice: { tpSentence: A1, idSentence: B2, rtSentence: C1 },
     details: { tpDetails: A1, idDetails: B2, rtDetails: C1 },
   },
@@ -46,6 +49,7 @@ export const CONDITIONS = {
     tp: "internal",
     id: "high",
     rt: "stored",
+    photo: "none",
     notice: { tpSentence: A1, idSentence: B2, rtSentence: C2 },
     details: { tpDetails: A1, idDetails: B2, rtDetails: C2 },
   },
@@ -54,6 +58,7 @@ export const CONDITIONS = {
     tp: "external",
     id: "low",
     rt: "immediate",
+    photo: "library",
     notice: { tpSentence: A2, idSentence: B1, rtSentence: C1 },
     details: { tpDetails: A2, idDetails: B1, rtDetails: C1 },
   },
@@ -62,6 +67,7 @@ export const CONDITIONS = {
     tp: "external",
     id: "low",
     rt: "stored",
+    photo: "library",
     notice: { tpSentence: A2, idSentence: B1, rtSentence: C2 },
     details: { tpDetails: A2, idDetails: B1, rtDetails: C2 },
   },
@@ -70,6 +76,7 @@ export const CONDITIONS = {
     tp: "external",
     id: "high",
     rt: "immediate",
+    photo: "library",
     notice: { tpSentence: A2, idSentence: B2, rtSentence: C1 },
     details: { tpDetails: A2, idDetails: B2, rtDetails: C1 },
   },
@@ -78,6 +85,7 @@ export const CONDITIONS = {
     tp: "external",
     id: "high",
     rt: "stored",
+    photo: "library",
     notice: { tpSentence: A2, idSentence: B2, rtSentence: C2 },
     details: { tpDetails: A2, idDetails: B2, rtDetails: C2 },
   },

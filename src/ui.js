@@ -70,6 +70,35 @@ export class AppUI {
     this.init();
   }
 
+  // Open system photo picker and remember selected image for AR overlays
+  openPhotoPicker() {
+    if (!this._photoInput) {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.style.display = "none";
+      input.addEventListener("change", () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        this.showPhotoInFrame(url);
+      });
+      document.body.appendChild(input);
+      this._photoInput = input;
+    }
+    this._photoInput.value = "";
+    this._photoInput.click();
+  }
+
+  showPhotoInFrame(url) {
+    // Ảnh cho AR overlay “Memory Frame”
+    if (!this.memoryFrameImage) {
+      this.memoryFrameImage = new Image();
+      this.memoryFrameImage.crossOrigin = "anonymous";
+    }
+    this.memoryFrameImage.src = url;
+  }
+
   init() {
     this.root.innerHTML = "";
     const intro = this.buildIntroScreen();
@@ -168,7 +197,7 @@ export class AppUI {
 
     const title = document.createElement("div");
     title.className = "screen-title";
-    title.textContent = "Data Notice";
+    title.textContent = "App Privacy Notice";
 
     const subtitle = document.createElement("div");
     subtitle.className = "screen-subtitle screen-subtitle-intro";
@@ -177,14 +206,29 @@ export class AppUI {
 
     const card = document.createElement("div");
     card.className = "card card-contrast";
+    const hasPhoto = this.condition.photo === "library";
     const noticeHtml = `
       <div class="notice-heading">What this notice covers</div>
       <div class="notice-text">
-        <strong>Camera:</strong> Raw camera video is used to render the effect in real time.
-        <ul class="notice-factors" style="padding-left: 18px; margin: 12px 0 0 0; list-style: disc;">
-          <li style="margin-bottom: 8px;"><span class="notice-line-label">(A - Third-party)</span> ${renderInlineMarkdown(this.condition.notice.tpSentence)}</li>
-          <li style="margin-bottom: 8px;"><span class="notice-line-label">(B - Identifiability)</span> ${renderInlineMarkdown(this.condition.notice.idSentence)}</li>
-          <li style="margin-bottom: 0;"><span class="notice-line-label">(C - Retention)</span> ${renderInlineMarkdown(this.condition.notice.rtSentence)}</li>
+        <p><strong>What information do we access?</strong></p>
+        <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
+          <li style="margin-bottom: 4px;"><strong>Camera:</strong> Used to let you take photos and videos in the app.</li>
+          <li style="margin-bottom: 4px;"><strong>Microphone:</strong> Used to record audio.</li>
+          ${
+            hasPhoto
+              ? '<li style="margin-bottom: 0;"><strong>Photo Library:</strong> Used to let you access, upload, or save content.</li>'
+              : ""
+          }
+        </ul>
+
+        <p><strong>How do we share information with third parties?</strong></p>
+        <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
+          <li style="margin-bottom: 0;">${renderInlineMarkdown(this.condition.notice.tpSentence)}</li>
+        </ul>
+
+        <p><strong>How long do we keep your information?</strong></p>
+        <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 0 0; list-style: disc;">
+          <li style="margin-bottom: 0;">${renderInlineMarkdown(this.condition.notice.rtSentence)}</li>
         </ul>
       </div>
     `;
@@ -229,7 +273,7 @@ export class AppUI {
 
     const title = document.createElement("div");
     title.className = "screen-title";
-    title.textContent = "More details about this notice";
+    title.textContent = "More details about this privacy notice";
 
     // Intentionally no step badge / subtitle here to keep this page minimal.
 
@@ -238,16 +282,7 @@ export class AppUI {
     card.innerHTML = `
   <div class="details-group">
     <div class="details-row">
-      <div class="details-title">Camera</div>
-      <div class="details-text">
-        <p>
-          The demo uses your live camera feed so the effect can follow your face in real time (like social apps).
-        </p>
-      </div>
-    </div>
-
-    <div class="details-row">
-      <div class="details-title">Usage Analytics</div>
+      <div class="details-title">Usage analytics</div>
       <div class="details-text">
         <p>
           "Usage analytics" means basic data about how the demo is used and whether it runs smoothly.
@@ -263,15 +298,9 @@ export class AppUI {
 
   <div class="details-group" style="margin-top: 12px;">
     <div class="details-row">
-      <div class="details-title">A - Third-party sharing</div>
+      <div class="details-title">Third-party sharing</div>
       <div class="details-text">
-        <div class="details-callout">
-          <div class="details-callout-text">
-            ${renderInlineMarkdown(this.condition.notice.tpSentence)}
-          </div>
-        </div>
-
-        <p style="margin-top:10px;">
+        <p>
           "Third-party" means an organisation outside the app (for example, an analytics or measurement partner).
           If sharing happens, it refers to usage analytics about how the feature is used - not the camera video.
         </p>
@@ -279,34 +308,9 @@ export class AppUI {
     </div>
 
     <div class="details-row">
-      <div class="details-title">B - Data identifiability</div>
+      <div class="details-title">Data retention</div>
       <div class="details-text">
-        <div class="details-callout">
-          <div class="details-callout-text">
-            ${renderInlineMarkdown(this.condition.notice.idSentence)}
-          </div>
-        </div>
-
-        <p style="margin-top:10px;">
-          "Identifiability" is about how easily data from the feature could be identified you as a person.
-        </p>
-
         <p>
-          "Biometric template" means a unique pattern created from signals like face/hand/voice that could be used to recognise someone.
-        </p>
-      </div>
-    </div>
-
-    <div class="details-row">
-      <div class="details-title">C - Data retention</div>
-      <div class="details-text">
-        <div class="details-callout">
-          <div class="details-callout-text">
-            ${renderInlineMarkdown(this.condition.notice.rtSentence)}
-          </div>
-        </div>
-
-        <p style="margin-top:10px;">
           "Retention" means how long stored feature data (including usage logs) is kept before it is deleted.
         </p>
       </div>
@@ -441,13 +445,25 @@ export class AppUI {
     const buttonRow = document.createElement("div");
     buttonRow.className = "demo-button-row";
 
+    // Camera now auto-requests permission on first entry to demo; here we only show Stop camera.
     const cameraBtn = document.createElement("button");
     cameraBtn.className = "btn btn-secondary btn-small";
     cameraBtn.id = "demoCameraButton";
-    cameraBtn.textContent = "Use my camera";
+    cameraBtn.textContent = "Stop camera";
+    cameraBtn.disabled = true;
     cameraBtn.addEventListener("click", () => {
       this.logger.addInteraction({ demo: true });
-      this.requestCamera();
+      this.stopCamera();
+    });
+
+    // Photo library access (manual, not auto)
+    const photoBtn = document.createElement("button");
+    photoBtn.className = "btn btn-secondary btn-small";
+    photoBtn.id = "demoPhotoButton";
+    photoBtn.textContent = "Photo library";
+    photoBtn.addEventListener("click", () => {
+      this.logger.addInteraction({ demo: true });
+      this.showPermissionPrompt("photos", () => this.openPhotoPicker());
     });
 
     const styleBtn = document.createElement("button");
@@ -462,14 +478,16 @@ export class AppUI {
     const micBtn = document.createElement("button");
     micBtn.className = "btn btn-secondary btn-small";
     micBtn.id = "demoMicButton";
-    micBtn.textContent = "Enable mic";
+    micBtn.textContent = "Stop mic";
     micBtn.style.display = "none";
+    micBtn.disabled = true;
     micBtn.addEventListener("click", async () => {
       this.logger.addInteraction({ demo: true });
-      await this.toggleMicrophone();
+      this.stopMicrophone();
     });
 
-    buttonRow.append(cameraBtn, micBtn, styleBtn);
+    // Order: Photo library (add content) → Stop camera → Stop mic → Switch type
+    buttonRow.append(photoBtn, cameraBtn, micBtn, styleBtn);
     demoShell.appendChild(buttonRow);
 
     // CTA text
@@ -477,7 +495,7 @@ export class AppUI {
     ctaText.className = "demo-cta-text";
     ctaText.id = "demoCtaText";
     ctaText.textContent =
-      "Tap 'Use my camera' above to try the filter on yourself, or tap 'Switch type' to change features.";
+      "The demo will ask for camera (and mic for some effects) like a normal app. You can stop access at any time.";
     demoShell.appendChild(ctaText);
 
     // Hint text
@@ -497,7 +515,7 @@ export class AppUI {
     const badgeLink = document.createElement("a");
     badgeLink.className = "badge-link";
     badgeLink.href = "#";
-    badgeLink.textContent = "Review the data notice";
+    badgeLink.textContent = "Review the privacy notice";
     // Keep the “link” feel but make it visible.
     badgeLink.style.cssText =
       "display:inline-block;color:#0b5ed7;text-decoration:underline;font-weight:600;padding:6px 10px;border-radius:10px;";
@@ -589,6 +607,12 @@ export class AppUI {
 
     // Bắt đầu timer kiểm tra gating
     this.startDemoGatingTimer();
+
+    // Tự xin quyền camera lần đầu giống app di động
+    if (!this.usingCamera && !this._demoCameraPrompted) {
+      this._demoCameraPrompted = true;
+      this.showPermissionPrompt("camera", () => this.requestCamera());
+    }
   }
 
   onEnterExit() {
@@ -637,34 +661,33 @@ export class AppUI {
 
     const heading = document.createElement("div");
     heading.className = "notice-heading";
-    heading.textContent = "Data notice";
+    heading.textContent = "App Privacy Notice";
     heading.style.marginBottom = "10px";
 
     const text = document.createElement("div");
     text.className = "notice-text";
-    const aValue = this.condition.tp === "internal" ? "Internal" : "External";
-    const bValue = this.condition.id === "low" ? "Low" : "High";
-    const cValue = this.condition.rt === "immediate" ? "Immediate" : "Up to 30 days";
-    // Full notice content (matches Page 2, read-only)
-    const cameraLine =
-      "Your camera feed is processed in real time to render the effect. The raw camera video for this effect is not stored.";
+    const hasPhoto = this.condition.photo === "library";
+    // Same structure as main App Privacy Notice
     text.innerHTML = `
-      <div style="margin-bottom: 12px; line-height: 1.5;">
-        <div style="font-weight: 700;">Camera</div>
-        <div>${cameraLine}</div>
-      </div>
-      <div style="margin-bottom: 12px; line-height: 1.5;">
-        <div style="font-weight: 700;">A - Third-party</div>
-        <div>${renderInlineMarkdown(this.condition.notice.tpSentence)}</div>
-      </div>
-      <div style="margin-bottom: 12px; line-height: 1.5;">
-        <div style="font-weight: 700;">B - Data identifiability</div>
-        <div>${renderInlineMarkdown(this.condition.notice.idSentence)}</div>
-      </div>
-      <div style="margin-bottom: 0; line-height: 1.5;">
-        <div style="font-weight: 700;">C - Data retention</div>
-        <div>${renderInlineMarkdown(this.condition.notice.rtSentence)}</div>
-      </div>
+      <div class="notice-heading" style="margin-bottom: 6px;">What this notice covers</div>
+      <p><strong>What information do we access?</strong></p>
+      <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
+        <li style="margin-bottom: 4px;"><strong>Camera:</strong> Used to let you take photos and videos in the app.</li>
+        <li style="margin-bottom: 4px;"><strong>Microphone:</strong> Used to record audio.</li>
+        ${
+          hasPhoto
+            ? '<li style="margin-bottom: 0;"><strong>Photo Library:</strong> Used to let you access, upload, or save content.</li>'
+            : ""
+        }
+      </ul>
+      <p><strong>How do we share information with third parties?</strong></p>
+      <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
+        <li style="margin-bottom: 0;">${renderInlineMarkdown(this.condition.notice.tpSentence)}</li>
+      </ul>
+      <p><strong>How long do we keep your information?</strong></p>
+      <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 0 0; list-style: disc;">
+        <li style="margin-bottom: 0;">${renderInlineMarkdown(this.condition.notice.rtSentence)}</li>
+      </ul>
     `;
 
     const btnRow = document.createElement("div");
@@ -684,6 +707,124 @@ export class AppUI {
     document.body.appendChild(overlay);
   }
 
+  // Simple in-app permission prompt styled like mobile OS dialogs
+  showPermissionPrompt(kind, onAllow) {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.55);
+      backdrop-filter: blur(6px);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    `;
+
+    const card = document.createElement("div");
+    card.style.cssText = `
+      max-width: 320px;
+      width: 100%;
+      border-radius: 16px;
+      background: #f9fafb;
+      box-shadow: 0 18px 45px rgba(15,23,42,0.45);
+      padding: 16px 16px 10px;
+      font-family: -apple-system, system-ui, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    `;
+
+    const title = document.createElement("div");
+    title.style.cssText =
+      "font-size:14px;font-weight:600;color:#111827;text-align:center;margin-bottom:8px;";
+    const appName = "Face-Filter Demo";
+    if (kind === "camera") {
+      title.textContent = `Allow “${appName}” to access your camera?`;
+    } else if (kind === "microphone") {
+      title.textContent = `Allow “${appName}” to access your microphone?`;
+    } else {
+      title.textContent = `Allow “${appName}” to access this feature?`;
+    }
+
+    const message = document.createElement("div");
+    message.style.cssText =
+      "font-size:12px;color:#4b5563;line-height:1.5;text-align:center;margin:0 4px 12px;";
+    if (kind === "camera") {
+      message.textContent =
+        "The demo uses your camera so the AR filter can follow your face in real time, similar to social apps.";
+    } else if (kind === "microphone") {
+      message.textContent =
+        "The demo uses your microphone to react to sound for the “Blow Balloon” effect.";
+    } else if (kind === "photos") {
+      message.textContent =
+        "The demo can use a photo from your library so you can try the AR filter on an existing picture.";
+    } else {
+      message.textContent =
+        "The demo needs this permission to run the AR effect correctly.";
+    }
+
+    const buttonsCol = document.createElement("div");
+    buttonsCol.style.cssText =
+      "display:flex;flex-direction:column;gap:6px;border-top:1px solid rgba(148,163,184,0.5);padding-top:10px;";
+
+    const makeBtn = (label, styleCss, onClick) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = label;
+      btn.style.cssText =
+        "width:100%;border-radius:12px;padding:7px 0;font-size:13px;font-weight:500;cursor:pointer;" +
+        styleCss;
+      btn.addEventListener("click", onClick);
+      return btn;
+    };
+
+    // Labels theo loại permission (camera/mic vs photo library)
+    const isPhotos = kind === "photos";
+
+    const denyLabel = "Don't Allow";
+    const secondaryLabel = isPhotos ? "Allow all" : "Only this time";
+    const primaryLabel = isPhotos ? "Select photos and videos" : "While using the app";
+
+    const denyBtn = makeBtn(
+      denyLabel,
+      "border:1px solid rgba(148,163,184,0.7);background:#e5e7eb;color:#111827;",
+      () => {
+        document.body.removeChild(overlay);
+      }
+    );
+
+    const secondaryBtn = makeBtn(
+      secondaryLabel,
+      "border:1px solid rgba(79,70,229,0.9);background:#eef2ff;color:#312e81;",
+      async () => {
+        document.body.removeChild(overlay);
+        try {
+          await onAllow();
+        } catch (err) {
+          console.error("Permission action failed", err);
+        }
+      }
+    );
+
+    const primaryBtn = makeBtn(
+      primaryLabel,
+      "border:none;background:#2563eb;color:#ffffff;font-weight:600;",
+      async () => {
+        document.body.removeChild(overlay);
+        try {
+          await onAllow();
+        } catch (err) {
+          console.error("Permission action failed", err);
+        }
+      }
+    );
+
+    // Android-style: primary (blue) on top, secondary, rồi Don't Allow
+    buttonsCol.append(primaryBtn, secondaryBtn, denyBtn);
+    card.append(title, message, buttonsCol);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
   // Bật timer kiểm tra điều kiện gating cho nút Continue
   startDemoGatingTimer() {
     if (this.demoTimerInterval) return;
@@ -695,7 +836,7 @@ export class AppUI {
 
   // Kiểm tra và cập nhật trạng thái nút Continue
   updateDemoGatingState() {
-    // Engagement gating (non-coercive): require ~30s in the demo after they tap "Use my camera".
+    // Engagement gating (non-coercive): require ~30s in the demo after camera is enabled.
     // Only camera use starts the countdown; "Switch type" does not.
     const startedEngaging = this.hasUsedCamera;
 
@@ -748,19 +889,19 @@ export class AppUI {
           hint.textContent = `Continue will unlock in ${remainingSec}s.`;
         } else {
           hint.textContent =
-            "Tap 'Use my camera' above to start. Continue will unlock after 30 seconds.";
+            "The demo will unlock Continue after about 30 seconds of camera use.";
         }
       }
     }
   }
 
-  // Cycle qua các style overlay (0–2: Cat ears, Blow Balloon, Spark Pop)
+  // Cycle qua các style overlay (0–3: Cat ears, Blow Balloon, Spark Pop, Memory Frame)
   cycleStyle() {
-    this.currentStyleVariant = (this.currentStyleVariant + 1) % 3;
+    this.currentStyleVariant = (this.currentStyleVariant + 1) % 4;
     this.hasChosenStyle = true;
     this.updateDemoGatingState();
 
-    const labels = ["Cat ears", "Blow Balloon", "Spark Pop"];
+    const labels = ["Cat ears", "Blow Balloon", "Spark Pop", "Memory Frame"];
     this.showStyleTag(labels[this.currentStyleVariant]);
 
     const micBtn = document.getElementById("demoMicButton");
@@ -773,6 +914,12 @@ export class AppUI {
       micChip.innerHTML = this.micEnabled
         ? '<span class="chip-dot"></span><span>Live mic active</span>'
         : '<span class="chip-dot chip-dot-off"></span><span>Mic off</span>';
+    }
+
+    // Khi chuyển sang Blow Balloon lần đầu, tự xin quyền microphone (giống app di động)
+    if (this.currentStyleVariant === 1 && !this.micEnabled && !this._demoMicPrompted) {
+      this._demoMicPrompted = true;
+      this.showPermissionPrompt("microphone", () => this.startMicrophone());
     }
   }
 
@@ -847,13 +994,13 @@ export class AppUI {
     const statusChip = document.getElementById("demoStatusChip");
     if (statusChip) {
       statusChip.innerHTML =
-        '<span class="chip-dot"></span><span>Camera off</span>';
+        '<span class="chip-dot chip-dot-off"></span><span>Camera off</span>';
     }
 
     const camBtn = document.getElementById("demoCameraButton");
     if (camBtn instanceof HTMLButtonElement) {
-      camBtn.textContent = "Use my camera";
-      camBtn.disabled = false;
+      camBtn.textContent = "Stop camera";
+      camBtn.disabled = true;
     }
   }
 
@@ -922,7 +1069,10 @@ export class AppUI {
       this.micBaseline = 0;
       this._baselineFrames = 0;
       const micBtn = document.getElementById("demoMicButton");
-      if (micBtn) micBtn.textContent = "Stop mic";
+      if (micBtn instanceof HTMLButtonElement) {
+        micBtn.textContent = "Stop mic";
+        micBtn.disabled = false;
+      }
       const micChip = document.getElementById("demoMicStatusChip");
       if (micChip) micChip.innerHTML = '<span class="chip-dot"></span><span>Live mic active</span>';
     } catch (e) {
@@ -948,7 +1098,10 @@ export class AppUI {
     this.micAnalyser = null;
     this.micDataFloat = null;
     const micBtn = document.getElementById("demoMicButton");
-    if (micBtn) micBtn.textContent = "Enable mic";
+    if (micBtn instanceof HTMLButtonElement) {
+      micBtn.textContent = "Stop mic";
+      micBtn.disabled = true;
+    }
     const micChip = document.getElementById("demoMicStatusChip");
     if (micChip) micChip.innerHTML = '<span class="chip-dot chip-dot-off"></span><span>Mic off</span>';
   }
@@ -1010,8 +1163,8 @@ export class AppUI {
         "Camera requires HTTPS (or localhost). Please open this demo via https:// or http://localhost."
       );
       if (camBtn instanceof HTMLButtonElement) {
-        camBtn.disabled = false;
-        camBtn.textContent = "Use my camera";
+        camBtn.disabled = true;
+        camBtn.textContent = "Stop camera";
       }
       return;
     }
@@ -1023,8 +1176,8 @@ export class AppUI {
         "Your browser does not support camera access here."
       );
       if (camBtn instanceof HTMLButtonElement) {
-        camBtn.disabled = false;
-        camBtn.textContent = "Use my camera";
+        camBtn.disabled = true;
+        camBtn.textContent = "Stop camera";
       }
       return;
     }
@@ -1067,7 +1220,7 @@ export class AppUI {
 
       if (camBtn instanceof HTMLButtonElement) {
         camBtn.disabled = false;
-        camBtn.textContent = "Use my camera";
+        camBtn.textContent = "Stop camera";
       }
     }
   }
@@ -1897,6 +2050,74 @@ export class AppUI {
         }
 
         break;
+      }
+
+      // Style 3: Memory Frame (photo from library follows your face)
+      case 3: {
+        const img = this.memoryFrameImage;
+        if (!img || !img.complete) {
+          // Hint nếu chưa chọn ảnh
+          ctx.fillStyle = "rgba(15,23,42,0.75)";
+          ctx.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto";
+          ctx.textAlign = "center";
+          ctx.fillText("Choose a photo from your library", canvasW / 2, canvasH * 0.1);
+          break;
+        }
+
+        const lmPt = (i) => (landmarks && landmarks[i] ? mapPoint(landmarks[i], video) : null);
+        const cheek = facePoints?.rightCheek
+          ? mapPoint(facePoints.rightCheek, video)
+          : lmPt(93); // fallback: cheek landmark
+        const forehead = facePoints?.foreheadTop
+          ? mapPoint(facePoints.foreheadTop, video)
+          : lmPt(10);
+
+        if (!cheek || !forehead) {
+          break;
+        }
+
+        const faceHeight = Math.abs(cheek.y - forehead.y) * 2;
+        const frameH = faceHeight * 0.6;
+        const frameW = frameH * 0.75;
+
+        const offsetX = w * 0.35;
+        const px = Math.min(canvasW - frameW * 0.6, cheek.x + offsetX);
+        const py = cheek.y - frameH * 0.5;
+
+        // Khung ảnh
+        ctx.save();
+        ctx.shadowColor = "rgba(15,23,42,0.4)";
+        ctx.shadowBlur = 18;
+        const r = 14;
+        ctx.beginPath();
+        ctx.moveTo(px + r, py);
+        ctx.lineTo(px + frameW - r, py);
+        ctx.quadraticCurveTo(px + frameW, py, px + frameW, py + r);
+        ctx.lineTo(px + frameW, py + frameH - r);
+        ctx.quadraticCurveTo(px + frameW, py + frameH, px + frameW - r, py + frameH);
+        ctx.lineTo(px + r, py + frameH);
+        ctx.quadraticCurveTo(px, py + frameH, px, py + frameH - r);
+        ctx.lineTo(px, py + r);
+        ctx.quadraticCurveTo(px, py, px + r, py);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(15,23,42,0.85)";
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Ảnh bên trong
+        ctx.save();
+        ctx.clip();
+        ctx.drawImage(img, px, py, frameW, frameH);
+        ctx.restore();
+
+        // Caption nhỏ
+        ctx.fillStyle = "rgba(248,250,252,0.92)";
+        ctx.font = "600 10px system-ui, -apple-system, Segoe UI, Roboto";
+        ctx.textAlign = "center";
+        ctx.fillText("Memory Frame", px + frameW / 2, py + frameH + 14);
+
+        ctx.restore();
+        return;
       }
     }
 
