@@ -295,9 +295,8 @@ export class AppUI {
     }
 
     card.innerHTML = `
-      <div class="notice-heading">Permissions in this version</div>
       <div class="notice-text">
-        <p>In this version of the demo, the app may access:</p>
+        <p>In this demo, the app may access:</p>
         <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 0 0; list-style: disc;">
           ${listItems}
         </ul>
@@ -307,13 +306,9 @@ export class AppUI {
       </div>
     `;
 
-    const meta = document.createElement("div");
-    meta.className = "meta-text";
-    meta.style.marginTop = "8px";
-    meta.textContent = "";
-
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
+    btnRow.style.marginTop = "8px";
 
     const back = document.createElement("button");
     back.className = "btn btn-secondary";
@@ -332,7 +327,7 @@ export class AppUI {
     });
 
     btnRow.append(back, primary);
-    el.append(title, subtitle, card, meta, btnRow);
+    el.append(title, subtitle, card, btnRow);
     return el;
   }
 
@@ -582,7 +577,7 @@ export class AppUI {
 
     // Notice badge link
     const noticeBadge = document.createElement("div");
-    noticeBadge.style.cssText = "margin-top:10px;text-align:center;";
+    noticeBadge.style.cssText = "margin-top:6px;text-align:center;";
     const badgeLink = document.createElement("a");
     badgeLink.className = "badge-link";
     badgeLink.href = "#";
@@ -601,7 +596,7 @@ export class AppUI {
     // Continue button (gated)
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
-    btnRow.style.marginTop = "14px";
+    btnRow.style.marginTop = "8px";
 
     const continueBtn = document.createElement("button");
     continueBtn.className = "btn btn-primary btn-disabled";
