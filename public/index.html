@@ -118,7 +118,7 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        padding: 18px 18px 20px;
+        padding: 18px 18px 14px;
         gap: 14px;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
@@ -430,6 +430,35 @@
         justify-content: center;
       }
 
+      .demo-photo-icon {
+        position: absolute;
+        left: 16px;
+        bottom: 18px;
+        width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.95);
+        background: rgba(15, 23, 42, 0.86);
+        color: #f9fafb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.55);
+        transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+      }
+
+      .demo-photo-icon svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .demo-photo-icon:hover {
+        background: rgba(15, 23, 42, 0.96);
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.65);
+      }
+
       /* -------- Thêm: Hiệu ứng hạt bụi, scanline, filter tag -------- */
 
       /* Hiệu ứng hạt bụi Film Grain */
@@ -719,20 +748,22 @@
 
       .demo-button-row {
         display: flex;
+        flex-wrap: wrap;
         gap: 6px;
         margin-top: 6px;
+        justify-content: center;
       }
 
       .demo-cta-text {
         font-size: 12px;
         color: var(--fg-muted);
-        margin-top: 4px;
+        margin-top: 2px;
       }
 
       .demo-hint {
         font-size: 11px;
         color: #a16207;
-        margin-top: 2px;
+        margin-top: 0;
       }
 
       .badge-link {
@@ -741,6 +772,9 @@
         text-decoration: underline;
         text-underline-offset: 3px;
         cursor: pointer;
+        display: inline-block;
+        margin-top: 0;
+        margin-bottom: 4px;
       }
 
       .exit-icon {
