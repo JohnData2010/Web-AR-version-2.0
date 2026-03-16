@@ -283,9 +283,16 @@ export class AppUI {
         'Camera and microphone access stays on <strong>while you are using this demo</strong>. When you close this page, access stops (similar to "Allow while using the app" in mobile apps).';
     }
 
-    const photoScopeLine = hasPhoto
-      ? "<p style=\"margin-top:6px;\">If you see an <strong>Allow all</strong> option in the photo library prompt, it lets the app keep using your library until you change this in your device settings.</p>"
-      : "";
+    let photoScopeLine = "";
+    if (hasPhoto) {
+      if (scope === "only") {
+        photoScopeLine =
+          '<p style="margin-top:6px;">For the photo library, this version is like choosing <strong>"Selected photos only"</strong>: the app can only use the specific photo(s) you pick in this demo.</p>';
+      } else {
+        photoScopeLine =
+          '<p style="margin-top:6px;">For the photo library, this version is like choosing <strong>"Allow all photos"</strong>: the app can use your library for this demo until you change this in your device settings.</p>';
+      }
+    }
 
     card.innerHTML = `
       <div class="notice-heading">Permissions in this version</div>
