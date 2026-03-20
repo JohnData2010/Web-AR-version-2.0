@@ -14,6 +14,7 @@ const SCREENS = {
   DETAILS: "details",
   DEMO: "demo",
   EXIT: "exit",
+  FEEDBACK: "feedback",
 };
 
 export class AppUI {
@@ -24,21 +25,43 @@ export class AppUI {
 
     this.currentScreen = null;
     this.demoStartTime = null;
-    // Thời điểm bắt đầu đếm 30s sau khi người dùng đã bật camera + chọn filter
+    // Thời điểm bắt đầu đếm 12s sau khi người dùng đã bật camera + chọn filter
     this.demoQualifyingStartTime = null;
     this.demoContinueEnabled = false;
 
-    // Tối thiểu 30s tính từ sau khi đã bật camera và chọn filter
-    this.demoMinMs = 30000;
+    // Screen gating thresholds (min dwell time before allowing "Continue")
+    this.permissionsMinMs = 5000; // App permissions screen
+    this.noticeMinMs = 10000; // App privacy policy screen
+
+    this.permissionsTimerInterval = null;
+    this.permissionsQualifyingStartTime = null;
+    this.noticeTimerInterval = null;
+    this.noticeQualifyingStartTime = null;
+    this.detailsTimerInterval = null;
+
+    // Tối thiểu 12s tính từ sau khi đã bật camera và chọn filter
+    this.demoMinMs = 12000;
     this.demoInteractionCountAtStart = 0;
     this.demoTimerInterval = null;
 
     this.cameraStream = null;
     this.usingCamera = false;
+    this.cameraGranted = false;
+
+    // Permission grant flags for demo countdown gating.
+    // Continue should only start once ALL required permissions are granted.
+    this.cameraGranted = false;
+    this.micGranted = false;
+    this.photosGranted = false;
 
     // Trạng thái tương tác demo: đã bật camera / đã chọn style nào chưa
     this.hasUsedCamera = false;
     this.hasChosenStyle = false;
+
+    // Marks whether the participant has completed the demo.
+    // Used so "Back to demo (optional)" doesn't reset the 12s unlock timer.
+    this.demoCompleted = false;
+    this._prevScreen = null;
 
     // Soften effect tích hợp sẵn trong mỗi feature (không còn nút bật/tắt)
     this.isFilterMuted = true;
@@ -54,6 +77,7 @@ export class AppUI {
     // Microphone state (for Blow Balloon style)
     this.micStream = null;
     this.micEnabled = false;
+    this.micGranted = false;
     this.audioCtx = null;
     this.micAnalyser = null;
     this.micScriptProcessor = null;
@@ -76,13 +100,20 @@ export class AppUI {
     if (!this._photoInput) {
       const input = document.createElement("input");
       input.type = "file";
-      input.accept = "image/*";
+      // Support both photos & videos (albums) for the demo permission prompt.
+      input.accept = "image/*,video/*";
       input.style.display = "none";
       input.addEventListener("change", () => {
         const file = input.files && input.files[0];
         if (!file) return;
-        const url = URL.createObjectURL(file);
-        this.showPhotoInFrame(url);
+        // This demo no longer renders a photo/video overlay, but we still
+        // treat a successful system selection as "photos & videos access granted"
+        // for the permission gating UX.
+        this.photosGranted = true;
+        if (file.type.startsWith("image/")) {
+          const url = URL.createObjectURL(file);
+          this.showPhotoInFrame(url);
+        }
       });
       document.body.appendChild(input);
       this._photoInput = input;
@@ -92,12 +123,13 @@ export class AppUI {
   }
 
   showPhotoInFrame(url) {
-    // Ảnh cho AR overlay “Memory Frame”
+    // Ảnh dùng cho các overlay AR (nếu được kích hoạt)
     if (!this.memoryFrameImage) {
       this.memoryFrameImage = new Image();
       this.memoryFrameImage.crossOrigin = "anonymous";
     }
     this.memoryFrameImage.src = url;
+    this.photosGranted = true;
   }
 
   init() {
@@ -108,15 +140,43 @@ export class AppUI {
     const details = this.buildDetailsScreen();
     const demo = this.buildDemoScreen();
     const exit = this.buildExitScreen();
+    const feedback = this.buildFeedbackScreen();
 
-    // Study flow: Intro -> Permissions -> App Privacy Notice -> Details -> Demo -> Exit
-    this.root.append(intro, permissions, notice, details, demo, exit);
+    // Study flow: Intro -> Permissions -> Privacy Policy -> Details -> Demo -> Exit
+    this.root.append(intro, permissions, notice, details, demo, exit, feedback);
 
     this.toScreen(SCREENS.INTRO);
   }
 
   toScreen(screen) {
     const prev = this.currentScreen;
+    this._prevScreen = prev;
+
+    // Stop screen gating timers when leaving those screens.
+    if (prev === SCREENS.PERMISSIONS && screen !== SCREENS.PERMISSIONS) {
+      if (this.permissionsTimerInterval) {
+        clearInterval(this.permissionsTimerInterval);
+        this.permissionsTimerInterval = null;
+      }
+      this.permissionsQualifyingStartTime = null;
+    }
+    if (prev === SCREENS.NOTICE && screen !== SCREENS.NOTICE) {
+      if (this.noticeTimerInterval) {
+        clearInterval(this.noticeTimerInterval);
+        this.noticeTimerInterval = null;
+      }
+      // Important: navigating to the details screen should not reset the notice dwell timer.
+      // We only reset when leaving NOTICE entirely (not when navigating to DETAILS).
+      if (screen !== SCREENS.DETAILS) {
+        this.noticeQualifyingStartTime = null;
+      }
+    }
+    if (prev === SCREENS.DETAILS && screen !== SCREENS.DETAILS) {
+      if (this.detailsTimerInterval) {
+        clearInterval(this.detailsTimerInterval);
+        this.detailsTimerInterval = null;
+      }
+    }
 
     // nếu rời màn demo thì tắt camera để không giữ webcam chạy nền
     if (prev === SCREENS.DEMO && screen !== SCREENS.DEMO) {
@@ -141,10 +201,18 @@ export class AppUI {
       this.logger.markNoticeHidden();
     }
 
-    if (screen === SCREENS.DEMO) {
+    if (screen === SCREENS.PERMISSIONS) {
+      this.onEnterPermissions();
+    } else if (screen === SCREENS.DEMO) {
       this.onEnterDemo();
+    } else if (screen === SCREENS.NOTICE) {
+      this.onEnterNotice();
+    } else if (screen === SCREENS.DETAILS) {
+      this.onEnterDetails();
     } else if (screen === SCREENS.EXIT) {
       this.onEnterExit();
+    } else if (screen === SCREENS.FEEDBACK) {
+      this.onEnterFeedback();
     }
   }
 
@@ -160,7 +228,7 @@ export class AppUI {
     const subtitle = document.createElement("div");
     subtitle.className = "screen-subtitle screen-subtitle-intro";
     subtitle.textContent =
-      "In this short demo, you will try an AR face filter similar to those used in social media apps before answering the survey questions.";
+      "In this short demo, you will try an AR face filter similar to those used in social media apps. Before you begin, you will first see what permissions the feature may request and how related data may be handled. You will then briefly try the demo before answering the survey questions.";
 
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
@@ -186,29 +254,17 @@ export class AppUI {
 
     const title = document.createElement("div");
     title.className = "screen-title";
-    title.textContent = "App Privacy Notice";
+    title.textContent = "Privacy Policy";
 
     const subtitle = document.createElement("div");
     subtitle.className = "screen-subtitle screen-subtitle-intro";
     subtitle.textContent =
-      "This short notice explains how data related to the AR face filter feature may be handled. For more information, tap 'View details'.";
+      "This short policy explains how data related to the AR face filter feature may be handled.";
 
     const card = document.createElement("div");
     card.className = "card card-contrast";
-    const hasPhoto = this.condition.photo === "library";
     const noticeHtml = `
       <div class="notice-text">
-        <p><strong>What information do we access?</strong></p>
-        <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
-          <li style="margin-bottom: 4px;"><strong>Camera:</strong> Used to let you take photos and videos in the app.</li>
-          <li style="margin-bottom: 4px;"><strong>Microphone:</strong> Used to record audio.</li>
-          ${
-            hasPhoto
-              ? '<li style="margin-bottom: 0;"><strong>Photo Library:</strong> Used to let you access, upload, or save content.</li>'
-              : ""
-          }
-        </ul>
-
         <p><strong>How do we share information with third parties?</strong></p>
         <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
           <li style="margin-bottom: 0;">${renderInlineMarkdown(this.condition.notice.tpSentence)}</li>
@@ -225,24 +281,18 @@ export class AppUI {
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
 
-    const detailsLink = document.createElement("button");
-    detailsLink.className = "btn btn-secondary";
-    detailsLink.textContent = "View details";
-    detailsLink.addEventListener("click", () => {
-      this.logger.addInteraction();
-      this.logger.markDetailsViewed();
-      this.toScreen(SCREENS.DETAILS);
-    });
-
     const primary = document.createElement("button");
     primary.className = "btn btn-primary";
     primary.textContent = "I understand, continue";
+    primary.id = "noticeContinueButton";
+    primary.disabled = true;
+    primary.classList.add("btn-disabled");
     primary.addEventListener("click", () => {
       this.logger.addInteraction();
       this.toScreen(SCREENS.DEMO);
     });
 
-    btnRow.append(detailsLink, primary);
+    btnRow.append(primary);
 
     el.append(title, subtitle, card, btnRow);
     return el;
@@ -260,7 +310,7 @@ export class AppUI {
     const subtitle = document.createElement("div");
     subtitle.className = "screen-subtitle";
     subtitle.textContent =
-      "For this study, the demo app has a fixed set of permissions. You can stop access at any time using the controls on the next screen.";
+      "This demo shows the types of permissions an AR face filter feature may request.";
 
     const card = document.createElement("div");
     card.className = "card";
@@ -270,7 +320,7 @@ export class AppUI {
     const listItems = [
       "<li>Camera</li>",
       "<li>Microphone</li>",
-      hasPhoto ? "<li>Photo Library</li>" : "",
+      hasPhoto ? "<li>Albums (photos & videos)</li>" : "",
     ]
       .filter(Boolean)
       .join("");
@@ -278,26 +328,26 @@ export class AppUI {
     let scopeLine;
     if (scope === "only") {
       scopeLine =
-        'Camera and microphone access is granted <strong>only this time</strong>. If you open the demo again later, your device will ask for permission again (similar to "Only this time" in mobile apps).';
+        'Access is set to <strong>Ask every time</strong>. The app will ask again the next time you open this demo.';
     } else {
       scopeLine =
-        'Camera and microphone access stays on <strong>while you are using this demo</strong>. When you close this page, access stops (similar to "Allow while using the app" in mobile apps).';
+        'Access is set to <strong>Allow only while using the app</strong>. When you close this page, access stops.';
     }
 
     let photoScopeLine = "";
     if (hasPhoto) {
       if (scope === "only") {
         photoScopeLine =
-          '<p style="margin-top:6px;">For the photo library, this version is like choosing <strong>"Selected photos only"</strong>: the app can only use the specific photo(s) you pick in this demo.</p>';
+          '<p style="margin-top:6px;">For albums (photos & videos), access is set to <strong>"Select photos and videos"</strong>.</p>';
       } else {
         photoScopeLine =
-          '<p style="margin-top:6px;">For the photo library, this version is like choosing <strong>"Allow all photos"</strong>: the app can use your library for this demo until you change this in your device settings.</p>';
+          '<p style="margin-top:6px;">For albums (photos & videos), access is set to <strong>"Allow all"</strong>.</p>';
       }
     }
 
     card.innerHTML = `
       <div class="notice-text">
-        <p>In this demo, the app may access:</p>
+        <p><strong>This demo may request access to:</strong></p>
         <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 0 0; list-style: disc;">
           ${listItems}
         </ul>
@@ -322,6 +372,9 @@ export class AppUI {
     const primary = document.createElement("button");
     primary.className = "btn btn-primary";
     primary.textContent = "Continue to demo";
+    primary.id = "permissionsContinueButton";
+    primary.disabled = true;
+    primary.classList.add("btn-disabled");
     primary.addEventListener("click", () => {
       this.logger.addInteraction();
       this.toScreen(SCREENS.NOTICE);
@@ -339,7 +392,7 @@ export class AppUI {
 
     const title = document.createElement("div");
     title.className = "screen-title";
-    title.textContent = "More details about this privacy notice";
+    title.textContent = "More details about this privacy policy";
 
     // Intentionally no step badge / subtitle here to keep this page minimal.
 
@@ -399,6 +452,10 @@ export class AppUI {
     const primary = document.createElement("button");
     primary.className = "btn btn-primary";
     primary.textContent = "I understand, continue";
+    primary.id = "detailsContinueButton";
+    // Gate this button using the same "notice dwell time" as NOTICE screen.
+    primary.disabled = true;
+    primary.classList.add("btn-disabled");
     primary.addEventListener("click", () => {
       this.logger.addInteraction();
       this.toScreen(SCREENS.DEMO);
@@ -408,6 +465,57 @@ export class AppUI {
 
     el.append(title, card, btnRow);
     return el;
+  }
+
+  onEnterDetails() {
+    if (this.detailsTimerInterval) {
+      clearInterval(this.detailsTimerInterval);
+      this.detailsTimerInterval = null;
+    }
+
+    // If user somehow lands on DETAILS without going through NOTICE,
+    // start the timer now so UX remains consistent.
+    if (this.noticeQualifyingStartTime == null) {
+      this.noticeQualifyingStartTime = performance.now();
+    }
+
+    const btn = document.getElementById("detailsContinueButton");
+    if (!btn) return;
+
+    if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
+
+    this.updateDetailsGatingState();
+    this.detailsTimerInterval = setInterval(
+      () => this.updateDetailsGatingState(),
+      500
+    );
+  }
+
+  updateDetailsGatingState() {
+    const btn = document.getElementById("detailsContinueButton");
+    if (!btn) return;
+    if (!this.noticeQualifyingStartTime) return;
+
+    const elapsed = performance.now() - this.noticeQualifyingStartTime;
+    const remainingMs = Math.max(0, this.noticeMinMs - elapsed);
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    const canContinue = remainingMs <= 0;
+
+    const originalText = btn.dataset.originalText || "I understand, continue";
+    if (canContinue) {
+      btn.disabled = false;
+      btn.classList.remove("btn-disabled");
+      btn.textContent = originalText;
+      if (this.detailsTimerInterval) {
+        clearInterval(this.detailsTimerInterval);
+        this.detailsTimerInterval = null;
+      }
+      return;
+    }
+
+    btn.disabled = true;
+    btn.classList.add("btn-disabled");
+    btn.textContent = `${originalText} (in ${remainingSec}s)`;
   }
 
   buildDemoScreen() {
@@ -480,20 +588,34 @@ export class AppUI {
 
     frame.append(placeholder, video, overlay);
 
-    // Photo library trigger icon inside frame (like social apps)
+    // TikTok-like left-bottom "albums" icon (visual only; no click).
     if (this.condition.photo === "library") {
-      const photoIcon = document.createElement("button");
-      photoIcon.type = "button";
-      photoIcon.className = "demo-photo-icon";
-      photoIcon.title = "Open photo library";
-      photoIcon.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5.5 17.5 10 13l3 3 2.5-2.5L18.5 17.5"/></svg>';
-      photoIcon.addEventListener("click", () => {
-        this.logger.addInteraction({ demo: true });
-        this.openPhotoPicker();
-      });
-      frame.appendChild(photoIcon);
+      const albumsIcon = document.createElement("div");
+      albumsIcon.setAttribute("aria-hidden", "true");
+      albumsIcon.style.cssText = `
+        position:absolute;
+        left:16px;
+        bottom:22px;
+        width:44px;
+        height:44px;
+        border-radius:999px;
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(255,255,255,0.25);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        pointer-events:none;
+        z-index: 26;
+      `;
+      albumsIcon.innerHTML =
+        '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:rgba(249,250,251,0.95);">' +
+        '<rect x="4" y="5" width="16" height="14" rx="2"></rect>' +
+        '<circle cx="9" cy="10" r="1.6"></circle>' +
+        '<path d="M5.5 17.5 10 13l3 3 2.5-2.5L18.5 17.5"></path>' +
+        "</svg>";
+      frame.appendChild(albumsIcon);
     }
+
     demoShell.appendChild(frame);
 
     // Demo controls
@@ -519,45 +641,6 @@ export class AppUI {
     controls.appendChild(controlsLeft);
     demoShell.appendChild(controls);
 
-    // Button row
-    const buttonRow = document.createElement("div");
-    buttonRow.className = "demo-button-row";
-
-    // Camera now auto-requests permission on first entry to demo; here we only show Stop camera.
-    const cameraBtn = document.createElement("button");
-    cameraBtn.className = "btn btn-secondary btn-small";
-    cameraBtn.id = "demoCameraButton";
-    cameraBtn.textContent = "Stop camera";
-    cameraBtn.disabled = true;
-    cameraBtn.addEventListener("click", () => {
-      this.logger.addInteraction({ demo: true });
-      this.stopCamera();
-    });
-
-    const styleBtn = document.createElement("button");
-    styleBtn.className = "btn btn-secondary btn-small";
-    styleBtn.id = "demoStyleButton";
-    styleBtn.textContent = "Switch filter";
-    styleBtn.addEventListener("click", () => {
-      this.logger.addInteraction({ demo: true });
-      this.cycleStyle();
-    });
-
-    const micBtn = document.createElement("button");
-    micBtn.className = "btn btn-secondary btn-small";
-    micBtn.id = "demoMicButton";
-    micBtn.textContent = "Stop mic";
-    micBtn.style.display = "none";
-    micBtn.disabled = true;
-    micBtn.addEventListener("click", async () => {
-      this.logger.addInteraction({ demo: true });
-      this.stopMicrophone();
-    });
-
-    // Order: Stop camera → Stop mic → Switch filter
-    buttonRow.append(cameraBtn, micBtn, styleBtn);
-    demoShell.appendChild(buttonRow);
-
     // CTA text
     const ctaText = document.createElement("div");
     ctaText.className = "demo-cta-text";
@@ -571,28 +654,10 @@ export class AppUI {
     hint.id = "demoHint";
     hint.style.display = "none";
     hint.textContent =
-      "Please try the demo for at least 30 seconds (you may use your camera or explore styles on the preview). Then you can continue.";
+      "Please try the demo for at least 12 seconds (using your camera if possible). Then you can continue.";
     demoShell.appendChild(hint);
 
     el.appendChild(demoShell);
-
-    // Notice badge link
-    const noticeBadge = document.createElement("div");
-    noticeBadge.style.cssText = "margin-top:6px;text-align:center;";
-    const badgeLink = document.createElement("a");
-    badgeLink.className = "badge-link";
-    badgeLink.href = "#";
-    badgeLink.textContent = "Review the privacy notice";
-    // Keep the “link” feel but make it visible.
-    badgeLink.style.cssText =
-      "display:inline-block;color:#0b5ed7;text-decoration:underline;font-weight:600;padding:6px 10px;border-radius:10px;";
-    badgeLink.addEventListener("click", (e) => {
-      e.preventDefault();
-      this.logger.addInteraction({ demo: true });
-      this.showInlineNotice();
-    });
-    noticeBadge.appendChild(badgeLink);
-    el.appendChild(noticeBadge);
 
     // Continue button (gated)
     const btnRow = document.createElement("div");
@@ -607,6 +672,7 @@ export class AppUI {
     continueBtn.addEventListener("click", () => {
       if (!this.demoContinueEnabled) return;
       this.logger.addInteraction({ demo: true });
+      this.demoCompleted = true;
       this.toScreen(SCREENS.EXIT);
     });
 
@@ -627,8 +693,7 @@ export class AppUI {
 
     const subtitle = document.createElement("div");
     subtitle.className = "screen-subtitle";
-    subtitle.textContent =
-      "Step 3 of 3: you have finished the AR filter demo. Please return to the survey to continue.";
+    subtitle.textContent = "";
 
     const card = document.createElement("div");
     card.className = "card card-contrast";
@@ -656,8 +721,226 @@ export class AppUI {
 
     btnRow.append(backBtn, finishBtn);
 
-    el.append(title, subtitle, card, btnRow);
+    // Extra option under "Return to survey"
+    const feedbackBtn = document.createElement("button");
+    feedbackBtn.className = "btn btn-secondary";
+    feedbackBtn.textContent = "Write feedback";
+    feedbackBtn.style.marginTop = "10px";
+    feedbackBtn.addEventListener("click", () => {
+      this.logger.addInteraction({ feedback: true });
+      this.toScreen(SCREENS.FEEDBACK);
+    });
+
+    el.append(title, subtitle, card, btnRow, feedbackBtn);
     return el;
+  }
+
+  buildFeedbackScreen() {
+    const el = document.createElement("section");
+    el.className = "screen";
+    el.dataset.screen = SCREENS.FEEDBACK;
+
+    const title = document.createElement("div");
+    title.className = "screen-title";
+    title.textContent = "Write feedback";
+
+    const subtitle = document.createElement("div");
+    subtitle.className = "screen-subtitle";
+    subtitle.textContent =
+      "We’d love to hear your thoughts. Please let us know what worked well and what could be improved.";
+
+    const card = document.createElement("div");
+    card.className = "card card-contrast";
+    card.style.padding = "16px";
+
+    const textarea = document.createElement("textarea");
+    textarea.id = "feedbackTextarea";
+    textarea.placeholder = "Your feedback…";
+    textarea.style.cssText =
+      "width:100%;min-height:140px;resize:vertical;border-radius:12px;border:1px solid rgba(148,163,184,0.6);padding:12px 12px;font-size:13px;line-height:1.4;outline:none;";
+
+    const hint = document.createElement("div");
+    hint.className = "meta-text";
+    hint.style.cssText = "margin-top:10px;";
+    hint.textContent = "Press “Send” to submit your feedback.";
+
+    const btnRow = document.createElement("div");
+    btnRow.className = "btn-row";
+    btnRow.style.marginTop = "12px";
+    btnRow.style.gap = "10px";
+
+    const backBtn = document.createElement("button");
+    backBtn.className = "btn btn-secondary";
+    backBtn.textContent = "Back";
+    backBtn.addEventListener("click", () => {
+      this.logger.addInteraction();
+      this.toScreen(SCREENS.EXIT);
+    });
+
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "btn btn-primary";
+    sendBtn.id = "feedbackSendButton";
+    sendBtn.textContent = "Send";
+    sendBtn.addEventListener("click", () => this.sendFeedbackEmail());
+
+    // Optional: disable Send when empty.
+    const updateSendEnabled = () => {
+      const v = (textarea.value || "").trim();
+      sendBtn.disabled = v.length === 0;
+      if (sendBtn.disabled) sendBtn.classList.add("btn-disabled");
+      else sendBtn.classList.remove("btn-disabled");
+    };
+    updateSendEnabled();
+    textarea.addEventListener("input", updateSendEnabled);
+
+    btnRow.append(backBtn, sendBtn);
+    card.append(textarea, hint, btnRow);
+
+    el.append(title, subtitle, card);
+    return el;
+  }
+
+  onEnterFeedback() {
+    // Focus textarea for faster feedback.
+    const textarea = document.getElementById("feedbackTextarea");
+    if (textarea) textarea.focus();
+  }
+
+  sendFeedbackEmail() {
+    const textarea = document.getElementById("feedbackTextarea");
+    const feedback = (textarea?.value || "").trim();
+
+    const subject = "AR face-filter demo feedback";
+    const conditionId = this.condition?.condition_id;
+    const tp = this.condition?.tp;
+    const id = this.condition?.id;
+    const rt = this.condition?.rt;
+
+    const body = [
+      "Feedback:",
+      feedback || "(empty)",
+      "",
+      "Context:",
+      `Condition: ${conditionId != null ? `C${conditionId}` : "N/A"}`,
+      `tp: ${tp ?? "N/A"}`,
+      `id: ${id ?? "N/A"}`,
+      `rt: ${rt ?? "N/A"}`,
+      `Time: ${new Date().toISOString()}`,
+    ].join("\n");
+
+    const mailTo = "s219566648@deakin.edu.au";
+    const mailtoUrl =
+      `mailto:${mailTo}` +
+      `?subject=${encodeURIComponent(subject)}` +
+      `&body=${encodeURIComponent(body)}`;
+
+    // Open email client with pre-filled content.
+    window.location.href = mailtoUrl;
+  }
+
+  onEnterPermissions() {
+    if (this.permissionsTimerInterval) {
+      clearInterval(this.permissionsTimerInterval);
+      this.permissionsTimerInterval = null;
+    }
+
+    this.permissionsQualifyingStartTime = performance.now();
+
+    const btn = document.getElementById("permissionsContinueButton");
+    if (!btn) return;
+
+    if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
+
+    // Start disabled; will be enabled after threshold.
+    btn.disabled = true;
+    btn.classList.add("btn-disabled");
+
+    this.updatePermissionsGatingState();
+    this.permissionsTimerInterval = setInterval(
+      () => this.updatePermissionsGatingState(),
+      500
+    );
+  }
+
+  updatePermissionsGatingState() {
+    const btn = document.getElementById("permissionsContinueButton");
+    if (!btn) return;
+    if (!this.permissionsQualifyingStartTime) return;
+
+    const elapsed = performance.now() - this.permissionsQualifyingStartTime;
+    const remainingMs = Math.max(0, this.permissionsMinMs - elapsed);
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    const canContinue = remainingMs <= 0;
+
+    const originalText = btn.dataset.originalText || "Continue to demo";
+    if (canContinue) {
+      btn.disabled = false;
+      btn.classList.remove("btn-disabled");
+      btn.textContent = originalText;
+      if (this.permissionsTimerInterval) {
+        clearInterval(this.permissionsTimerInterval);
+        this.permissionsTimerInterval = null;
+      }
+      return;
+    }
+
+    btn.disabled = true;
+    btn.classList.add("btn-disabled");
+    btn.textContent = `${originalText} (in ${remainingSec}s)`;
+  }
+
+  onEnterNotice() {
+    if (this.noticeTimerInterval) {
+      clearInterval(this.noticeTimerInterval);
+      this.noticeTimerInterval = null;
+    }
+
+    // Keep the existing start time if user navigated between NOTICE <-> DETAILS.
+    // This prevents details navigation from resetting the countdown.
+    if (this.noticeQualifyingStartTime == null) {
+      this.noticeQualifyingStartTime = performance.now();
+    }
+
+    const btn = document.getElementById("noticeContinueButton");
+    if (!btn) return;
+
+    if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
+
+    btn.disabled = true;
+    btn.classList.add("btn-disabled");
+
+    this.updateNoticeGatingState();
+    this.noticeTimerInterval = setInterval(
+      () => this.updateNoticeGatingState(),
+      500
+    );
+  }
+
+  updateNoticeGatingState() {
+    const btn = document.getElementById("noticeContinueButton");
+    if (!btn) return;
+    if (!this.noticeQualifyingStartTime) return;
+
+    const elapsed = performance.now() - this.noticeQualifyingStartTime;
+    const remainingMs = Math.max(0, this.noticeMinMs - elapsed);
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    const canContinue = remainingMs <= 0;
+
+    const originalText = btn.dataset.originalText || "I understand, continue";
+    if (canContinue) {
+      btn.disabled = false;
+      btn.classList.remove("btn-disabled");
+      btn.textContent = originalText;
+      if (this.noticeTimerInterval) {
+        clearInterval(this.noticeTimerInterval);
+        this.noticeTimerInterval = null;
+      }
+      return;
+    }
+
+    btn.disabled = true;
+    btn.classList.add("btn-disabled");
+    btn.textContent = `${originalText} (in ${remainingSec}s)`;
   }
 
   onEnterDemo() {
@@ -666,20 +949,95 @@ export class AppUI {
     this.logger.markDemoVisible();
     this.logger.startLagMonitor();
 
+    // If the participant is returning from the exit screen after completing the demo,
+    // keep the Continue button unlocked and DO NOT reset the 12s timer.
+    if (this.demoCompleted && this._prevScreen === SCREENS.EXIT) {
+      this.demoContinueEnabled = true;
+      this.updateContinueButton(true, null);
+
+      // Ensure camera is running again (permission already granted usually; no scope prompt needed).
+      if (!this.usingCamera) {
+        if (!this._demoCameraPrompted) {
+          this._demoCameraPrompted = true;
+          this.showPermissionPrompt("camera", () => this.requestCamera());
+        } else {
+          this.requestCamera();
+        }
+      }
+      return;
+    }
+
+    // Fresh demo run
+    this.demoCompleted = false;
+
     // Reset demo state
     this.hasUsedCamera = false;
     this.hasChosenStyle = false;
     this.demoQualifyingStartTime = null;
     this.demoContinueEnabled = false;
+    this.cameraGranted = false;
+    this.micGranted = false;
+    this.photosGranted = false;
 
     // Bắt đầu timer kiểm tra gating
     this.startDemoGatingTimer();
 
-    // Bật camera lần đầu trong demo với prompt 3 lựa chọn (scope fixed by condition)
-    if (!this.usingCamera && !this._demoCameraPrompted) {
-      this._demoCameraPrompted = true;
-      this.showPermissionPrompt("camera", () => this.requestCamera());
-    }
+    // Request required permissions right when the demo appears:
+    // - Camera
+    // - Microphone
+    // - Photo albums (photos/videos) if condition includes it
+    //
+    // This demo only renders Spark Pop, but permission text still depends on condition.
+    const needPhotos = this.condition.photo === "library";
+    const needMic = true; // this prototype currently treats biometric access as camera + microphone
+
+    const afterPhotos = () => {};
+
+    const promptPhotos = () => {
+      if (!needPhotos) {
+        afterPhotos();
+        return;
+      }
+      this.showPermissionPrompt(
+        "photos",
+        () => {
+          // Choosing an "allow" option grants the photos/videos access for this demo
+          // (even if the picker is cancelled), matching the Android-style UX.
+          this.photosGranted = true;
+          this.openPhotoPicker();
+        },
+        () => afterPhotos()
+      );
+    };
+
+    const promptMic = () => {
+      if (!needMic) {
+        promptPhotos();
+        return;
+      }
+      this.showPermissionPrompt(
+        "microphone",
+        async () => {
+          await this.startMicrophone();
+          promptPhotos();
+        },
+        () => promptPhotos()
+      );
+    };
+
+    const promptCamera = () => {
+      this.showPermissionPrompt(
+        "camera",
+        async () => {
+          await this.requestCamera();
+          promptMic();
+        },
+        () => promptMic()
+      );
+    };
+
+    // Always show the prompts at demo entry (so participants don't have to click filters).
+    promptCamera();
   }
 
   onEnterExit() {
@@ -688,6 +1046,18 @@ export class AppUI {
       clearInterval(this.demoTimerInterval);
       this.demoTimerInterval = null;
     }
+
+    if (this.permissionsTimerInterval) {
+      clearInterval(this.permissionsTimerInterval);
+      this.permissionsTimerInterval = null;
+    }
+    this.permissionsQualifyingStartTime = null;
+
+    if (this.noticeTimerInterval) {
+      clearInterval(this.noticeTimerInterval);
+      this.noticeTimerInterval = null;
+    }
+    this.noticeQualifyingStartTime = null;
   }
 
   finishAndSendData() {
@@ -728,24 +1098,13 @@ export class AppUI {
 
     const heading = document.createElement("div");
     heading.className = "notice-heading";
-    heading.textContent = "App Privacy Notice";
+    heading.textContent = "Privacy Policy";
     heading.style.marginBottom = "10px";
 
     const text = document.createElement("div");
     text.className = "notice-text";
-    const hasPhoto = this.condition.photo === "library";
-    // Same structure as main App Privacy Notice
+    // Same structure as main Privacy Policy
     text.innerHTML = `
-      <p><strong>What information do we access?</strong></p>
-      <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
-        <li style="margin-bottom: 4px;"><strong>Camera:</strong> Used to let you take photos and videos in the app.</li>
-        <li style="margin-bottom: 4px;"><strong>Microphone:</strong> Used to record audio.</li>
-        ${
-          hasPhoto
-            ? '<li style="margin-bottom: 0;"><strong>Photo Library:</strong> Used to let you access, upload, or save content.</li>'
-            : ""
-        }
-      </ul>
       <p><strong>How do we share information with third parties?</strong></p>
       <ul class="notice-factors" style="padding-left: 18px; margin: 8px 0 16px 0; list-style: disc;">
         <li style="margin-bottom: 0;">${renderInlineMarkdown(this.condition.notice.tpSentence)}</li>
@@ -774,7 +1133,7 @@ export class AppUI {
   }
 
   // Simple in-app permission prompt styled like mobile OS dialogs
-  showPermissionPrompt(kind, onAllow) {
+  showPermissionPrompt(kind, onAllow, onDeny = null) {
     const overlay = document.createElement("div");
     overlay.style.cssText = `
       position: fixed;
@@ -807,6 +1166,8 @@ export class AppUI {
       title.textContent = `Allow “${appName}” to access your camera?`;
     } else if (kind === "microphone") {
       title.textContent = `Allow “${appName}” to access your microphone?`;
+    } else if (kind === "photos") {
+      title.textContent = `Allow “${appName}” to access photos and videos on this device?`;
     } else {
       title.textContent = `Allow “${appName}” to access this feature?`;
     }
@@ -816,13 +1177,16 @@ export class AppUI {
       "font-size:12px;color:#4b5563;line-height:1.5;text-align:center;margin:0 4px 12px;";
     if (kind === "camera") {
       message.textContent =
-        "The demo uses your camera so the AR filter can follow your face in real time, similar to social apps.";
+        "Allows the app to take pictures and record videos for this demo.";
     } else if (kind === "microphone") {
       message.textContent =
-        "The demo uses your microphone to react to sound for the “Blow Balloon” effect.";
+        "Allows the app to record audio for this demo.";
     } else if (kind === "photos") {
+      const scope = this.condition.scope || "while";
       message.textContent =
-        "The demo can use a photo from your library so you can try the AR filter on an existing picture.";
+        scope === "only"
+          ? "Access only the photos and videos you select."
+          : "Allow access to your albums for this demo until you change your device settings.";
     } else {
       message.textContent =
         "The demo needs this permission to run the AR effect correctly.";
@@ -849,23 +1213,34 @@ export class AppUI {
       return btn;
     };
 
-    // Labels theo loại permission (camera/mic vs photo library)
+    // Labels theo loại permission (camera/mic vs photos/videos)
     const isPhotos = kind === "photos";
-    const denyLabel = "Don't Allow";
-    const secondaryLabel = isPhotos ? "Allow all" : "Only this time";
-    const primaryLabel = isPhotos ? "Select photos and videos" : "While using the app";
+    const denyLabel = "Don't allow";
+    const secondaryLabel = isPhotos
+      ? "Allow all"
+      : "Ask every time";
+    const primaryLabel = isPhotos
+      ? "Select photos and videos"
+      : "Allow only while using the app";
 
     const scope = this.condition.scope || "while";
-    const enableWhile = isPhotos || scope === "while";
-    const enableOnlyThis = isPhotos || scope === "only";
+    // For photos/videos:
+    // - primary = "Select photos and videos" (enabled only when scope === "only")
+    // - secondary = "Allow all" (enabled only when scope === "while")
+    // For camera/microphone:
+    // - primary = "Allow only while using the app" (enabled only when scope === "while")
+    // - secondary = "Ask every time" (enabled only when scope === "only")
+    const enablePrimary = isPhotos ? scope === "only" : scope === "while";
+    const enableSecondary = isPhotos ? scope === "while" : scope === "only";
 
     const denyBtn = makeBtn(
       denyLabel,
       "border:1px solid rgba(148,163,184,0.7);background:#e5e7eb;color:#111827;",
       () => {
         document.body.removeChild(overlay);
+        if (typeof onDeny === "function") onDeny();
       },
-      isPhotos // với camera/mic: Don't Allow chỉ để tượng trưng, không click
+      false
     );
 
     const secondaryBtn = makeBtn(
@@ -879,7 +1254,7 @@ export class AppUI {
           console.error("Permission action failed", err);
         }
       },
-      enableOnlyThis
+      enableSecondary
     );
 
     const primaryBtn = makeBtn(
@@ -893,10 +1268,10 @@ export class AppUI {
           console.error("Permission action failed", err);
         }
       },
-      enableWhile
+      enablePrimary
     );
 
-    // Android-style: primary (blue) on top, secondary, rồi Don't Allow
+    // Android-style: primary (top), secondary, rồi "Don't allow"
     buttonsCol.append(primaryBtn, secondaryBtn, denyBtn);
     card.append(title, message, buttonsCol);
     overlay.appendChild(card);
@@ -914,17 +1289,51 @@ export class AppUI {
 
   // Kiểm tra và cập nhật trạng thái nút Continue
   updateDemoGatingState() {
-    // Engagement gating (non-coercive): require ~30s in the demo after camera is enabled.
-    // Only camera use starts the countdown; "Switch filter" does not.
-    const startedEngaging = this.hasUsedCamera;
+    // If the participant already completed the demo, keep Continue unlocked.
+    // This prevents the countdown from restarting when they go back from the Exit screen.
+    if (this.demoCompleted) {
+      this.demoContinueEnabled = true;
+      this.updateContinueButton(true, null);
+      return;
+    }
 
-    // If they haven't engaged yet, don't start the countdown.
-    if (!startedEngaging) {
+    const needPhotos = this.condition.photo === "library";
+    const allRequiredGranted =
+      this.cameraGranted &&
+      this.micGranted &&
+      (!needPhotos || this.photosGranted);
+
+    const hint = document.getElementById("demoHint");
+    const cta = document.getElementById("demoCtaText");
+
+    if (!allRequiredGranted) {
+      // Only start the countdown once ALL required permissions are granted.
       this.demoQualifyingStartTime = null;
       this.demoContinueEnabled = false;
       this.updateContinueButton(false, null);
+
+      // Hide the old "12s of camera use" hint; we'll show a permission notice instead.
+      if (hint) hint.style.display = "none";
+
+      const missing = [];
+      if (!this.cameraGranted) missing.push("camera");
+      if (!this.micGranted) missing.push("microphone");
+      if (needPhotos && !this.photosGranted) missing.push("photos and videos");
+
+      let message = "";
+      if (missing.length === 1) {
+        message = `Please allow ${missing[0]} to continue.`;
+      } else if (missing.length === 2) {
+        message = `Please allow ${missing[0]} and ${missing[1]} to continue.`;
+      } else if (missing.length >= 3) {
+        message = "Please allow all required permissions to continue.";
+      }
+      if (cta) cta.textContent = message;
       return;
     }
+
+    // Permissions OK -> clear notice.
+    if (cta) cta.textContent = "";
 
     // Start countdown at first engagement moment.
     if (!this.demoQualifyingStartTime) {
@@ -967,25 +1376,27 @@ export class AppUI {
           hint.textContent = `Continue will unlock in ${remainingSec}s.`;
         } else {
           hint.textContent =
-            "The demo will unlock Continue after about 30 seconds of camera use.";
+            "The demo will unlock Continue after about 12 seconds of camera use.";
         }
       }
     }
   }
 
-  // Cycle qua các style overlay (0–2: Spark Pop, Blow Balloon, Memory Frame)
+  // Cycle qua các style overlay (0–1: Spark Pop, Blow Balloon)
   cycleStyle() {
-    this.currentStyleVariant = (this.currentStyleVariant + 1) % 3;
+    const prevVariant = this.currentStyleVariant;
+    this.currentStyleVariant = (this.currentStyleVariant + 1) % 2;
     this.hasChosenStyle = true;
     this.updateDemoGatingState();
 
-    const labels = ["Spark Pop", "Blow Balloon", "Memory Frame"];
-    this.showStyleTag(labels[this.currentStyleVariant]);
-
-    const micBtn = document.getElementById("demoMicButton");
-    if (micBtn) {
-      micBtn.style.display = this.currentStyleVariant === 1 ? "inline-flex" : "none";
+    // No dedicated "Stop mic" button anymore:
+    // stop microphone when leaving Blow Balloon mode (variant 1).
+    if (prevVariant === 1 && this.currentStyleVariant !== 1 && this.micEnabled) {
+      this.stopMicrophone();
     }
+
+    const labels = ["", "Blow Balloon"];
+    this.showStyleTag(labels[this.currentStyleVariant]);
     const micChip = document.getElementById("demoMicStatusChip");
     if (micChip) {
       micChip.style.display = this.currentStyleVariant === 1 ? "inline-flex" : "none";
@@ -995,9 +1406,14 @@ export class AppUI {
     }
 
     // Khi chuyển sang Blow Balloon lần đầu, hiện prompt 3 lựa chọn cho microphone
-    if (this.currentStyleVariant === 1 && !this.micEnabled && !this._demoMicPrompted) {
-      this._demoMicPrompted = true;
-      this.showPermissionPrompt("microphone", () => this.startMicrophone());
+    if (this.currentStyleVariant === 1 && !this.micEnabled) {
+      if (!this._demoMicPrompted) {
+        this._demoMicPrompted = true;
+        this.showPermissionPrompt("microphone", () => this.startMicrophone());
+      } else {
+        // Permission likely already granted; start mic directly without re-prompting UI.
+        this.startMicrophone().catch(() => {});
+      }
     }
   }
 
@@ -1009,6 +1425,9 @@ export class AppUI {
     const filterNameEl = frame.querySelector(".filter-name");
     if (filterNameEl) {
       filterNameEl.textContent = label;
+      // If we intentionally hide the label (e.g., remove "Spark Pop"),
+      // also hide the pill background so no empty rounded bar remains.
+      filterNameEl.style.display = label ? "block" : "none";
       const oldTag = frame.querySelector(".demo-style-tag");
       if (oldTag) oldTag.remove();
       return;
@@ -1143,6 +1562,7 @@ export class AppUI {
       }
       silentGain.connect(this.audioCtx.destination);
       this.micEnabled = true;
+      this.micGranted = true;
       this.micLevel = 0;
       this.micBaseline = 0;
       this._baselineFrames = 0;
@@ -1347,6 +1767,9 @@ export class AppUI {
     }
 
     this.usingCamera = true;
+
+    // Camera access is considered granted when the stream is enabled successfully.
+    this.cameraGranted = true;
 
     // Start face tracking
     try {
@@ -1824,13 +2247,8 @@ export class AppUI {
     // currentStyleVariant:
     //   0 -> Spark Pop (old case 2)
     //   1 -> Blow Balloon (old case 1)
-    //   2 -> Memory Frame (old case 3)
     const drawStyleVariant =
-      this.currentStyleVariant === 0
-        ? 2
-        : this.currentStyleVariant === 1
-          ? 1
-          : 3;
+      this.currentStyleVariant === 0 ? 2 : 1;
 
     switch (drawStyleVariant) {
       // Old Style 0 (cat ears) is no longer reachable after remap.
@@ -2142,73 +2560,6 @@ export class AppUI {
         break;
       }
 
-      // Style 3: Memory Frame (photo from library follows your face)
-      case 3: {
-        const img = this.memoryFrameImage;
-        if (!img || !img.complete) {
-          // Hint nếu chưa chọn ảnh
-          ctx.fillStyle = "rgba(15,23,42,0.75)";
-          ctx.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto";
-          ctx.textAlign = "center";
-          ctx.fillText("Choose a photo from your library", canvasW / 2, canvasH * 0.1);
-          break;
-        }
-
-        const lmPt = (i) => (landmarks && landmarks[i] ? mapPoint(landmarks[i], video) : null);
-        const cheek = facePoints?.rightCheek
-          ? mapPoint(facePoints.rightCheek, video)
-          : lmPt(93); // fallback: cheek landmark
-        const forehead = facePoints?.foreheadTop
-          ? mapPoint(facePoints.foreheadTop, video)
-          : lmPt(10);
-
-        if (!cheek || !forehead) {
-          break;
-        }
-
-        const faceHeight = Math.abs(cheek.y - forehead.y) * 2;
-        const frameH = faceHeight * 0.6;
-        const frameW = frameH * 0.75;
-
-        const offsetX = w * 0.35;
-        const px = Math.min(canvasW - frameW * 0.6, cheek.x + offsetX);
-        const py = cheek.y - frameH * 0.5;
-
-        // Khung ảnh
-        ctx.save();
-        ctx.shadowColor = "rgba(15,23,42,0.4)";
-        ctx.shadowBlur = 18;
-        const r = 14;
-        ctx.beginPath();
-        ctx.moveTo(px + r, py);
-        ctx.lineTo(px + frameW - r, py);
-        ctx.quadraticCurveTo(px + frameW, py, px + frameW, py + r);
-        ctx.lineTo(px + frameW, py + frameH - r);
-        ctx.quadraticCurveTo(px + frameW, py + frameH, px + frameW - r, py + frameH);
-        ctx.lineTo(px + r, py + frameH);
-        ctx.quadraticCurveTo(px, py + frameH, px, py + frameH - r);
-        ctx.lineTo(px, py + r);
-        ctx.quadraticCurveTo(px, py, px + r, py);
-        ctx.closePath();
-        ctx.fillStyle = "rgba(15,23,42,0.85)";
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // Ảnh bên trong
-        ctx.save();
-        ctx.clip();
-        ctx.drawImage(img, px, py, frameW, frameH);
-        ctx.restore();
-
-        // Caption nhỏ
-        ctx.fillStyle = "rgba(248,250,252,0.92)";
-        ctx.font = "600 10px system-ui, -apple-system, Segoe UI, Roboto";
-        ctx.textAlign = "center";
-        ctx.fillText("Memory Frame", px + frameW / 2, py + frameH + 14);
-
-        ctx.restore();
-        return;
-      }
     }
 
     ctx.restore();
