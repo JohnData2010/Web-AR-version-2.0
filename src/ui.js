@@ -109,7 +109,8 @@ export class AppUI {
     const demo = this.buildDemoScreen();
     const exit = this.buildExitScreen();
 
-    this.root.append(intro, notice, permissions, details, demo, exit);
+    // Study flow: Intro -> Permissions -> App Privacy Notice -> Details -> Demo -> Exit
+    this.root.append(intro, permissions, notice, details, demo, exit);
 
     this.toScreen(SCREENS.INTRO);
   }
@@ -169,7 +170,7 @@ export class AppUI {
     primary.textContent = "Start demo";
     primary.addEventListener("click", () => {
       this.logger.addInteraction();
-      this.toScreen(SCREENS.NOTICE);
+      this.toScreen(SCREENS.PERMISSIONS);
     });
 
     btnRow.appendChild(primary);
@@ -238,7 +239,7 @@ export class AppUI {
     primary.textContent = "I understand, continue";
     primary.addEventListener("click", () => {
       this.logger.addInteraction();
-      this.toScreen(SCREENS.PERMISSIONS);
+      this.toScreen(SCREENS.DEMO);
     });
 
     btnRow.append(detailsLink, primary);
@@ -315,7 +316,7 @@ export class AppUI {
     back.textContent = "Back";
     back.addEventListener("click", () => {
       this.logger.addInteraction();
-      this.toScreen(SCREENS.NOTICE);
+      this.toScreen(SCREENS.INTRO);
     });
 
     const primary = document.createElement("button");
@@ -323,7 +324,7 @@ export class AppUI {
     primary.textContent = "Continue to demo";
     primary.addEventListener("click", () => {
       this.logger.addInteraction();
-      this.toScreen(SCREENS.DEMO);
+      this.toScreen(SCREENS.NOTICE);
     });
 
     btnRow.append(back, primary);
@@ -972,13 +973,13 @@ export class AppUI {
     }
   }
 
-  // Cycle qua các style overlay (0–3: Cat ears, Blow Balloon, Spark Pop, Memory Frame)
+  // Cycle qua các style overlay (0–2: Spark Pop, Blow Balloon, Memory Frame)
   cycleStyle() {
-    this.currentStyleVariant = (this.currentStyleVariant + 1) % 4;
+    this.currentStyleVariant = (this.currentStyleVariant + 1) % 3;
     this.hasChosenStyle = true;
     this.updateDemoGatingState();
 
-    const labels = ["Cat ears", "Blow Balloon", "Spark Pop", "Memory Frame"];
+    const labels = ["Spark Pop", "Blow Balloon", "Memory Frame"];
     this.showStyleTag(labels[this.currentStyleVariant]);
 
     const micBtn = document.getElementById("demoMicButton");
@@ -993,7 +994,7 @@ export class AppUI {
         : '<span class="chip-dot chip-dot-off"></span><span>Mic off</span>';
     }
 
-    // Khi chuyển sang Blow Balloon lần đầu, hiện prompt 3 lựa chọn cho microphone (scope fixed by condition)
+    // Khi chuyển sang Blow Balloon lần đầu, hiện prompt 3 lựa chọn cho microphone
     if (this.currentStyleVariant === 1 && !this.micEnabled && !this._demoMicPrompted) {
       this._demoMicPrompted = true;
       this.showPermissionPrompt("microphone", () => this.startMicrophone());
@@ -1819,8 +1820,20 @@ export class AppUI {
     const cx = mirroredX + w / 2;
     const top = y;
 
-    switch (this.currentStyleVariant) {
-      // Style 0: cat ears + blush
+    // Remap display order to existing drawing cases:
+    // currentStyleVariant:
+    //   0 -> Spark Pop (old case 2)
+    //   1 -> Blow Balloon (old case 1)
+    //   2 -> Memory Frame (old case 3)
+    const drawStyleVariant =
+      this.currentStyleVariant === 0
+        ? 2
+        : this.currentStyleVariant === 1
+          ? 1
+          : 3;
+
+    switch (drawStyleVariant) {
+      // Old Style 0 (cat ears) is no longer reachable after remap.
       case 0: {
         const earW = w * 0.22;
         const earH = h * 0.25;
