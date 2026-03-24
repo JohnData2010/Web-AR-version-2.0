@@ -1708,7 +1708,11 @@ export class AppUI {
     video.volume = 0;
     video.loop = true;
     video.srcObject = null;
-    video.src = "/Chỉnh_sửa_video_chân_thật_hơn.mp4";
+    const sourceCandidates = [
+      "./Chỉnh_sửa_video_chân_thật_hơn.mp4",
+      "/public/Chỉnh_sửa_video_chân_thật_hơn.mp4",
+      "/Chỉnh_sửa_video_chân_thật_hơn.mp4",
+    ];
     video.onloadedmetadata = () => {
       if (video.audioTracks && video.audioTracks.length > 0) {
         for (let i = 0; i < video.audioTracks.length; i++) {
@@ -1725,14 +1729,23 @@ export class AppUI {
 
     if (placeholder) placeholder.style.display = "none";
 
-    try {
-      await video.play();
-      video.style.display = "block";
-    } catch (e) {
-      console.warn("Demo video autoplay failed:", e);
-      video.controls = true;
-      video.style.display = "block";
+    let played = false;
+    for (const src of sourceCandidates) {
+      try {
+        video.src = src;
+        video.load();
+        await video.play();
+        played = true;
+        break;
+      } catch (e) {
+        console.warn("Demo video source failed:", src, e);
+      }
     }
+    if (!played) {
+      console.warn("Demo video playback failed for all sources");
+      video.controls = true;
+    }
+    video.style.display = "block";
 
     this.hasUsedCamera = true;
     this.usingCamera = true;
