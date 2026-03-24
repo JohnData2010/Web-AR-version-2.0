@@ -931,6 +931,15 @@
     </template>
     <!-- Load MediaPipe Face Landmarker before main app -->
     <script type="module">
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'pre-fix',hypothesisId:'H4',location:'public/index.html:module-bootstrap',message:'index module bootstrap executed',data:{href:window.location.href},timestamp:Date.now()})}).catch(()=>{});
+      window.addEventListener('error', (e) => {
+        fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'pre-fix',hypothesisId:'H5',location:'public/index.html:window.onerror',message:'window error captured',data:{message:e.message,source:e.filename,line:e.lineno,column:e.colno},timestamp:Date.now()})}).catch(()=>{});
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'pre-fix',hypothesisId:'H5',location:'public/index.html:unhandledrejection',message:'promise rejection captured',data:{reason:String(e.reason)},timestamp:Date.now()})}).catch(()=>{});
+      });
+      // #endregion
       // Pre-load MediaPipe to ensure it's available when needed
       // Try multiple CDN sources
       const tryLoadMediaPipe = async () => {

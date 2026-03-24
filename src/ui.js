@@ -22,6 +22,9 @@ export class AppUI {
     this.root = root;
     this.condition = condition;
     this.logger = new Logger();
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'pre-fix',hypothesisId:'H3',location:'src/ui.js:constructor',message:'AppUI constructor called',data:{conditionId:condition?.condition_id ?? null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
 
     this.currentScreen = null;
     this.demoStartTime = null;

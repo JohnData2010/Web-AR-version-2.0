@@ -3,6 +3,9 @@ import { initPostMessageOrigin, sendMessage } from "./postmessage.js";
 import { AppUI } from "./ui.js";
 
 function init() {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'pre-fix',hypothesisId:'H1',location:'src/main.js:init',message:'init entered',data:{href:window.location.href,search:window.location.search},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   initPostMessageOrigin();
 
   const params = new URLSearchParams(window.location.search);
@@ -71,7 +74,15 @@ function init() {
   }
 
   const appBody = document.getElementById("appBody");
-  if (!appBody) return;
+  if (!appBody) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'pre-fix',hypothesisId:'H2',location:'src/main.js:init',message:'appBody missing',data:{hasHeaderStatus:!!document.getElementById("headerStatus")},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    return;
+  }
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'pre-fix',hypothesisId:'H3',location:'src/main.js:init',message:'appBody found, mounting AppUI',data:{conditionId:condition.condition_id},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 
   // eslint-disable-next-line no-new
   new AppUI({ root: appBody, condition, debug });
