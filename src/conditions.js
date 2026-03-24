@@ -1,7 +1,7 @@
 // All condition text for the 2×2×4 design.
 // A (Third-party): A1 = internal, A2 = external
 // B (Identifiability): fixed as low in this prototype (UI no longer varies it)
-// C (Retention): C1 = immediate, C2 = 30 days
+// C (Retention): C1 = immediate, C2 = three (3) years
 // D (Access permission bundle – 4 levels):
 //   D1 = Limited access × Biometric only
 //        - Only this time: Camera
@@ -29,7 +29,7 @@ const B1 =
 const C1 =
   "Any stored data related to this feature is deleted immediately after the demo ends.";
 const C2 =
-  "Any stored data related to this feature may be retained for up to 30 days unless you request deletion.";
+  "Any stored data related to this feature may be retained for up to three (3) years unless you request deletion.";
 
 export const CONDITIONS = {
   1: {

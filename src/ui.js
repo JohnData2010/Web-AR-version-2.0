@@ -30,17 +30,18 @@ export class AppUI {
     this.demoContinueEnabled = false;
 
     // Screen gating thresholds (min dwell time before allowing "Continue")
-    this.permissionsMinMs = 5000; // App permissions screen
-    this.noticeMinMs = 10000; // App privacy policy screen
+    this.permissionsMinMs = 7000; // App permissions screen
+    this.noticeMinMs = 12000; // App privacy policy screen
 
     this.permissionsTimerInterval = null;
     this.permissionsQualifyingStartTime = null;
     this.noticeTimerInterval = null;
     this.noticeQualifyingStartTime = null;
     this.detailsTimerInterval = null;
+    this.permissionDecisionDelayMs = 2000;
 
     // Tối thiểu 12s tính từ sau khi đã bật camera và chọn filter
-    this.demoMinMs = 12000;
+    this.demoMinMs = 5000;
     this.demoInteractionCountAtStart = 0;
     this.demoTimerInterval = null;
 
@@ -85,6 +86,7 @@ export class AppUI {
     this.micLevel = 0;
     this.micBaseline = 0;
     this._baselineFrames = 0;
+    this._fakeMicAnimation = null;
 
     // Balloon game state (style 1)
     this.balloon = { value: 0, popped: false, popTimer: 0 };
@@ -228,7 +230,7 @@ export class AppUI {
     const subtitle = document.createElement("div");
     subtitle.className = "screen-subtitle screen-subtitle-intro";
     subtitle.textContent =
-      "In this short demo, you will try an AR face filter similar to those used in social media apps. Before you begin, you will first see what permissions the feature may request and how related data may be handled. You will then briefly try the demo before answering the survey questions.";
+      "In this short demo, you will try an AR face filter similar to those used in social media apps. Before you begin, please review the access this feature may request and how related data may be handled. You will then try the demo before answering the survey questions.";
 
     const btnRow = document.createElement("div");
     btnRow.className = "btn-row";
@@ -530,7 +532,7 @@ export class AppUI {
     const subtitle = document.createElement("div");
     subtitle.className = "screen-subtitle";
     subtitle.textContent =
-      "Step 2 of 3: you can use your camera or just explore the filter on the demo video. Tap the buttons below to try different styles.";
+      "Step 2 of 3: explore the filter on a short embedded demo video. Tap the buttons below to try different styles.";
 
     const demoShell = document.createElement("div");
     demoShell.className = "demo-shell";
@@ -561,7 +563,10 @@ export class AppUI {
     video.className = "demo-camera-video";
     video.id = "demoCameraVideo";
     video.setAttribute("playsinline", "");
+    video.setAttribute("muted", "");
     video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
     video.style.display = "none";
 
     // Canvas overlay for face tracking
@@ -618,44 +623,12 @@ export class AppUI {
 
     demoShell.appendChild(frame);
 
-    // Demo controls
-    const controls = document.createElement("div");
-    controls.className = "demo-controls";
-
-    const controlsLeft = document.createElement("div");
-    controlsLeft.className = "demo-controls-left";
-
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.id = "demoStatusChip";
-    chip.innerHTML = '<span class="chip-dot"></span><span>Camera off</span>';
-
-    const micChip = document.createElement("div");
-    micChip.className = "chip";
-    micChip.id = "demoMicStatusChip";
-    micChip.innerHTML = '<span class="chip-dot chip-dot-off"></span><span>Mic off</span>';
-    micChip.style.display = "none";
-
-    controlsLeft.appendChild(chip);
-    controlsLeft.appendChild(micChip);
-    controls.appendChild(controlsLeft);
-    demoShell.appendChild(controls);
-
     // CTA text
     const ctaText = document.createElement("div");
     ctaText.className = "demo-cta-text";
     ctaText.id = "demoCtaText";
     ctaText.textContent = "";
     demoShell.appendChild(ctaText);
-
-    // Hint text
-    const hint = document.createElement("div");
-    hint.className = "demo-hint";
-    hint.id = "demoHint";
-    hint.style.display = "none";
-    hint.textContent =
-      "Please try the demo for at least 12 seconds (using your camera if possible). Then you can continue.";
-    demoShell.appendChild(hint);
 
     el.appendChild(demoShell);
 
@@ -721,17 +694,7 @@ export class AppUI {
 
     btnRow.append(backBtn, finishBtn);
 
-    // Extra option under "Return to survey"
-    const feedbackBtn = document.createElement("button");
-    feedbackBtn.className = "btn btn-secondary";
-    feedbackBtn.textContent = "Write feedback";
-    feedbackBtn.style.marginTop = "10px";
-    feedbackBtn.addEventListener("click", () => {
-      this.logger.addInteraction({ feedback: true });
-      this.toScreen(SCREENS.FEEDBACK);
-    });
-
-    el.append(title, subtitle, card, btnRow, feedbackBtn);
+    el.append(title, subtitle, card, btnRow);
     return el;
   }
 
@@ -949,25 +912,8 @@ export class AppUI {
     this.logger.markDemoVisible();
     this.logger.startLagMonitor();
 
-    // If the participant is returning from the exit screen after completing the demo,
-    // keep the Continue button unlocked and DO NOT reset the 12s timer.
-    if (this.demoCompleted && this._prevScreen === SCREENS.EXIT) {
-      this.demoContinueEnabled = true;
-      this.updateContinueButton(true, null);
-
-      // Ensure camera is running again (permission already granted usually; no scope prompt needed).
-      if (!this.usingCamera) {
-        if (!this._demoCameraPrompted) {
-          this._demoCameraPrompted = true;
-          this.showPermissionPrompt("camera", () => this.requestCamera());
-        } else {
-          this.requestCamera();
-        }
-      }
-      return;
-    }
-
-    // Fresh demo run
+    // Always treat demo entry as a fresh run so permissions are re-asked consistently
+    // across all conditions (including when participant taps "Back to demo").
     this.demoCompleted = false;
 
     // Reset demo state
@@ -982,14 +928,12 @@ export class AppUI {
     // Bắt đầu timer kiểm tra gating
     this.startDemoGatingTimer();
 
-    // Request required permissions right when the demo appears:
+    // Request required permissions right when the demo appears (UI simulation only):
     // - Camera
     // - Microphone
     // - Photo albums (photos/videos) if condition includes it
-    //
-    // This demo only renders Spark Pop, but permission text still depends on condition.
     const needPhotos = this.condition.photo === "library";
-    const needMic = true; // this prototype currently treats biometric access as camera + microphone
+    const needMic = true;
 
     const afterPhotos = () => {};
 
@@ -1001,10 +945,8 @@ export class AppUI {
       this.showPermissionPrompt(
         "photos",
         () => {
-          // Choosing an "allow" option grants the photos/videos access for this demo
-          // (even if the picker is cancelled), matching the Android-style UX.
+          // UI-only grant: no real picker/API call.
           this.photosGranted = true;
-          this.openPhotoPicker();
         },
         () => afterPhotos()
       );
@@ -1018,7 +960,7 @@ export class AppUI {
       this.showPermissionPrompt(
         "microphone",
         async () => {
-          await this.startMicrophone();
+          this.micGranted = true;
           promptPhotos();
         },
         () => promptPhotos()
@@ -1029,7 +971,7 @@ export class AppUI {
       this.showPermissionPrompt(
         "camera",
         async () => {
-          await this.requestCamera();
+          await this.enableEmbeddedVideoView();
           promptMic();
         },
         () => promptMic()
@@ -1259,7 +1201,7 @@ export class AppUI {
 
     const primaryBtn = makeBtn(
       primaryLabel,
-      "border:none;background:#2563eb;color:#ffffff;font-weight:600;",
+      "border:none;background:#2563eb;color:#ffffff;font-weight:500;",
       async () => {
         document.body.removeChild(overlay);
         try {
@@ -1270,6 +1212,48 @@ export class AppUI {
       },
       enablePrimary
     );
+
+    // Force a short read-time pause before participants can choose.
+    const actionableButtons = [primaryBtn, secondaryBtn].filter(
+      (btn) => !btn.disabled
+    );
+    const originalButtonLabels = new Map();
+    actionableButtons.forEach((btn) => {
+      originalButtonLabels.set(btn, btn.textContent || "");
+      btn.disabled = true;
+      btn.setAttribute("aria-disabled", "true");
+      btn.style.opacity = "0.6";
+      btn.style.cursor = "default";
+    });
+
+    const countdownSec = Math.ceil(this.permissionDecisionDelayMs / 1000);
+    actionableButtons.forEach((btn) => {
+      const originalLabel = originalButtonLabels.get(btn) || "";
+      btn.textContent = `${originalLabel} (in ${countdownSec}s)`;
+    });
+    let remainingSec = countdownSec;
+    const countdownTimer = setInterval(() => {
+      remainingSec -= 1;
+      if (remainingSec > 0) {
+        actionableButtons.forEach((btn) => {
+          const originalLabel = originalButtonLabels.get(btn) || "";
+          btn.textContent = `${originalLabel} (in ${remainingSec}s)`;
+        });
+      } else {
+        clearInterval(countdownTimer);
+      }
+    }, 1000);
+
+    setTimeout(() => {
+      actionableButtons.forEach((btn) => {
+        const originalLabel = originalButtonLabels.get(btn);
+        if (originalLabel) btn.textContent = originalLabel;
+        btn.disabled = false;
+        btn.removeAttribute("aria-disabled");
+        btn.style.opacity = "";
+        btn.style.cursor = "pointer";
+      });
+    }, this.permissionDecisionDelayMs);
 
     // Android-style: primary (top), secondary, rồi "Don't allow"
     buttonsCol.append(primaryBtn, secondaryBtn, denyBtn);
@@ -1303,7 +1287,6 @@ export class AppUI {
       this.micGranted &&
       (!needPhotos || this.photosGranted);
 
-    const hint = document.getElementById("demoHint");
     const cta = document.getElementById("demoCtaText");
 
     if (!allRequiredGranted) {
@@ -1311,24 +1294,7 @@ export class AppUI {
       this.demoQualifyingStartTime = null;
       this.demoContinueEnabled = false;
       this.updateContinueButton(false, null);
-
-      // Hide the old "12s of camera use" hint; we'll show a permission notice instead.
-      if (hint) hint.style.display = "none";
-
-      const missing = [];
-      if (!this.cameraGranted) missing.push("camera");
-      if (!this.micGranted) missing.push("microphone");
-      if (needPhotos && !this.photosGranted) missing.push("photos and videos");
-
-      let message = "";
-      if (missing.length === 1) {
-        message = `Please allow ${missing[0]} to continue.`;
-      } else if (missing.length === 2) {
-        message = `Please allow ${missing[0]} and ${missing[1]} to continue.`;
-      } else if (missing.length >= 3) {
-        message = "Please allow all required permissions to continue.";
-      }
-      if (cta) cta.textContent = message;
+      if (cta) cta.textContent = "";
       return;
     }
 
@@ -1357,9 +1323,6 @@ export class AppUI {
       btn.classList.remove("btn-disabled");
       btn.disabled = false;
       btn.textContent = "Continue";
-
-      const hint = document.getElementById("demoHint");
-      if (hint) hint.style.display = "none";
     } else {
       btn.classList.add("btn-disabled");
       btn.disabled = true;
@@ -1367,17 +1330,6 @@ export class AppUI {
         btn.textContent = `Continue (in ${remainingSec}s)`;
       } else {
         btn.textContent = "Continue";
-      }
-
-      const hint = document.getElementById("demoHint");
-      if (hint) {
-        hint.style.display = "block";
-        if (typeof remainingSec === "number") {
-          hint.textContent = `Continue will unlock in ${remainingSec}s.`;
-        } else {
-          hint.textContent =
-            "The demo will unlock Continue after about 12 seconds of camera use.";
-        }
       }
     }
   }
@@ -1467,11 +1419,11 @@ export class AppUI {
         video.pause();
       } catch (e) {}
       video.srcObject = null;
+      video.currentTime = 0;
       video.style.display = "none";
       video.style.filter = "none";
       video.style.transition = "filter 0.3s ease";
-      // Keep mirror effect for consistency
-      video.style.transform = "scaleX(-1)";
+      video.style.transform = "none";
     }
 
     const overlay = document.getElementById("demoCameraOverlayCanvas");
@@ -1491,7 +1443,7 @@ export class AppUI {
     const statusChip = document.getElementById("demoStatusChip");
     if (statusChip) {
       statusChip.innerHTML =
-        '<span class="chip-dot chip-dot-off"></span><span>Camera off</span>';
+        '<span class="chip-dot chip-dot-off"></span><span>Demo video paused</span>';
     }
 
     const camBtn = document.getElementById("demoCameraButton");
@@ -1510,73 +1462,30 @@ export class AppUI {
   }
 
   async startMicrophone() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      alert("Microphone is not supported in this browser.");
-      return;
-    }
-    try {
-      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (this.audioCtx.state === "suspended") {
-        await this.audioCtx.resume();
-      }
-      this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      });
-      const source = this.audioCtx.createMediaStreamSource(this.micStream);
-      const silentGain = this.audioCtx.createGain();
-      silentGain.gain.value = 0;
+    // UI-only simulation: do not call device microphone APIs.
+    this.micEnabled = true;
+    this.micGranted = true;
+    this.micLevel = 0.25;
+    this.micBaseline = 0;
+    this._baselineFrames = 0;
 
-      if (typeof this.audioCtx.createScriptProcessor === "function") {
-        const bufferSize = 4096;
-        this.micScriptProcessor = this.audioCtx.createScriptProcessor(bufferSize, 1, 1);
-        this.micScriptProcessor.onaudioprocess = (e) => {
-          const input = e.inputBuffer.getChannelData(0);
-          let sum = 0;
-          for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
-          const rms = Math.sqrt(sum / input.length);
-          if (this._baselineFrames < 10) {
-            this.micBaseline = (this.micBaseline * this._baselineFrames + rms) / (this._baselineFrames + 1);
-            this._baselineFrames++;
-          } else if (rms < this.micBaseline + 0.025) {
-            this.micBaseline = this.micBaseline * 0.98 + rms * 0.02;
-          }
-          let raw = Math.max(0, rms - (this.micBaseline + 0.005));
-          if (raw < 0.002 && rms > 0.001) raw = rms * 0.5;
-          const normalized = Math.min(1, raw / 0.06);
-          let level = this.micLevel * 0.75 + normalized * 0.25;
-          if (this.micLevel < 0.01 && rms > 0.002) level = Math.min(1, rms / 0.018);
-          this.micLevel = level;
-        };
-        source.connect(this.micScriptProcessor);
-        this.micScriptProcessor.connect(silentGain);
-      } else {
-        this.micAnalyser = this.audioCtx.createAnalyser();
-        this.micAnalyser.fftSize = 1024;
-        this.micDataFloat = new Float32Array(this.micAnalyser.fftSize);
-        source.connect(this.micAnalyser);
-        this.micAnalyser.connect(silentGain);
-      }
-      silentGain.connect(this.audioCtx.destination);
-      this.micEnabled = true;
-      this.micGranted = true;
-      this.micLevel = 0;
-      this.micBaseline = 0;
-      this._baselineFrames = 0;
-      const micBtn = document.getElementById("demoMicButton");
-      if (micBtn instanceof HTMLButtonElement) {
-        micBtn.textContent = "Stop mic";
-        micBtn.disabled = false;
-      }
-      const micChip = document.getElementById("demoMicStatusChip");
-      if (micChip) micChip.innerHTML = '<span class="chip-dot"></span><span>Live mic active</span>';
-    } catch (e) {
-      console.error("Microphone error:", e);
-      alert("Could not access microphone. Please allow microphone access.");
+    if (this._fakeMicAnimation) cancelAnimationFrame(this._fakeMicAnimation);
+    const tick = () => {
+      if (!this.micEnabled) return;
+      const t = performance.now() / 700;
+      this.micLevel = 0.18 + (Math.sin(t) + 1) * 0.22 + Math.random() * 0.08;
+      this._fakeMicAnimation = requestAnimationFrame(tick);
+    };
+    this._fakeMicAnimation = requestAnimationFrame(tick);
+
+    const micBtn = document.getElementById("demoMicButton");
+    if (micBtn instanceof HTMLButtonElement) {
+      micBtn.textContent = "Stop mic";
+      micBtn.disabled = false;
     }
+    const micChip = document.getElementById("demoMicStatusChip");
+    if (micChip)
+      micChip.innerHTML = '<span class="chip-dot"></span><span>Mic simulated</span>';
   }
 
   stopMicrophone() {
@@ -1585,6 +1494,10 @@ export class AppUI {
     } catch (e) {}
     this.micStream = null;
     this.micEnabled = false;
+    if (this._fakeMicAnimation) {
+      cancelAnimationFrame(this._fakeMicAnimation);
+      this._fakeMicAnimation = null;
+    }
     try {
       if (this.micScriptProcessor) {
         this.micScriptProcessor.disconnect();
@@ -1776,6 +1689,56 @@ export class AppUI {
       await this.ensureFaceTracking(video, document.getElementById("demoFrame"));
     } catch (e) {
       console.warn("Face tracking init failed:", e);
+    }
+  }
+
+  async enableEmbeddedVideoView() {
+    const video = document.getElementById("demoCameraVideo");
+    const placeholder = document.getElementById("demoPlaceholder");
+    const statusChip = document.getElementById("demoStatusChip");
+    if (!(video instanceof HTMLVideoElement)) return;
+
+    video.setAttribute("playsinline", "");
+    video.setAttribute("muted", "");
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+    video.loop = true;
+    video.srcObject = null;
+    video.src = "/Chỉnh_sửa_video_chân_thật_hơn.mp4";
+    video.onloadedmetadata = () => {
+      if (video.audioTracks && video.audioTracks.length > 0) {
+        for (let i = 0; i < video.audioTracks.length; i++) {
+          video.audioTracks[i].enabled = false;
+        }
+      }
+    };
+    video.style.transform = "none";
+    video.style.display = "none";
+    video.style.filter = this.isFilterMuted
+      ? "brightness(1.1) saturate(1.2) contrast(1.05) blur(0.4px) sepia(0.1)"
+      : "none";
+    video.style.transition = "filter 0.3s ease";
+
+    if (placeholder) placeholder.style.display = "none";
+
+    try {
+      await video.play();
+      video.style.display = "block";
+    } catch (e) {
+      console.warn("Demo video autoplay failed:", e);
+      video.controls = true;
+      video.style.display = "block";
+    }
+
+    this.hasUsedCamera = true;
+    this.usingCamera = true;
+    this.cameraGranted = true;
+    this.logger.setCameraPermission("simulated");
+
+    if (statusChip) {
+      statusChip.innerHTML =
+        '<span class="chip-dot"></span><span>Demo video playing</span>';
     }
   }
 
