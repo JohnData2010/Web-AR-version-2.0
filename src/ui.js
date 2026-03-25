@@ -1546,6 +1546,9 @@ export class AppUI {
 
   // Yêu cầu camera: bật/tắt robust, request camera, xử lý lỗi.
   async requestCamera() {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-video-debug-1',hypothesisId:'H5',location:'src/ui.js:requestCamera:start',message:'requestCamera called (should not happen in embedded-video mode)',data:{href:window.location.href},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     // Nếu đang bật camera -> toggle OFF
     if (this.usingCamera) {
       this.logger.addInteraction({ demo: true });
@@ -1698,6 +1701,10 @@ export class AppUI {
     const statusChip = document.getElementById("demoStatusChip");
     if (!(video instanceof HTMLVideoElement)) return;
 
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-video-debug-1',hypothesisId:'H1',location:'src/ui.js:enableEmbeddedVideoView:start',message:'enableEmbeddedVideoView called',data:{href:window.location.href,pathname:window.location.pathname,videoExists:!!video,readyState:video.readyState,currentSrc:video.currentSrc},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
     video.setAttribute("playsinline", "");
     video.setAttribute("muted", "");
     video.muted = true;
@@ -1733,13 +1740,22 @@ export class AppUI {
         video.load();
         await video.play();
         played = true;
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-video-debug-1',hypothesisId:'H2',location:'src/ui.js:enableEmbeddedVideoView:play-success',message:'video.play succeeded',data:{src,readyState:video.readyState,currentSrc:video.currentSrc,paused:video.paused},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         break;
       } catch (e) {
         console.warn("Demo video source failed:", src, e);
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-video-debug-1',hypothesisId:'H3',location:'src/ui.js:enableEmbeddedVideoView:play-failed',message:'video.play failed for candidate',data:{src,errorName:e?.name||null,errorMessage:e?.message||String(e||''),videoErrorCode:video.error?.code||null,videoErrorName:video.error?.name||null,readyState:video.readyState,currentSrc:video.currentSrc},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       }
     }
     if (!played) {
       console.warn("Demo video playback failed for all sources");
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-video-debug-1',hypothesisId:'H4',location:'src/ui.js:enableEmbeddedVideoView:all-failed',message:'all video candidates failed',data:{candidates:sourceCandidates,finalReadyState:video.readyState,currentSrc:video.currentSrc,paused:video.paused},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       video.controls = true;
     }
     video.style.display = "block";
