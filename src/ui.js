@@ -1569,81 +1569,33 @@ export class AppUI {
       return;
     }
 
+    // UI-only hard guard:
+    // Even if Qualtrics/embedded environment triggers requestCamera(),
+    // we MUST NOT call getUserMedia. We render the embedded mp4 instead.
     const camBtn = document.getElementById("demoCameraButton");
     const statusChip = document.getElementById("demoStatusChip");
 
-    // Set trạng thái requesting
     if (camBtn instanceof HTMLButtonElement) {
       camBtn.disabled = true;
-      camBtn.textContent = "Requesting…";
+      camBtn.textContent = "Starting demo…";
     }
     if (statusChip) {
       statusChip.innerHTML =
-        '<span class="chip-dot chip-dot-warn"></span><span>Requesting camera…</span>';
-    }
-
-    // Check HTTPS context
-    if (!window.isSecureContext) {
-      this.logger.setCameraPermission("insecure_context");
-      this.showCameraUnavailable(
-        "Camera requires HTTPS (or localhost). Please open this demo via https:// or http://localhost."
-      );
-      if (camBtn instanceof HTMLButtonElement) {
-        camBtn.disabled = true;
-        camBtn.textContent = "Stop camera";
-      }
-      return;
-    }
-
-    // Check support
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      this.logger.setCameraPermission("not_supported");
-      this.showCameraUnavailable(
-        "Your browser does not support camera access here."
-      );
-      if (camBtn instanceof HTMLButtonElement) {
-        camBtn.disabled = true;
-        camBtn.textContent = "Stop camera";
-      }
-      return;
+        '<span class="chip-dot"></span><span>Demo video starting</span>';
     }
 
     try {
-      // Không yêu cầu width/height để tránh camera crop/zoom (FOV tự nhiên) trên cả web và mobile
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "user" } },
-        audio: false,
-      });
-
-      this.cameraStream = stream;
-      this.logger.setCameraPermission("granted");
-
-      await this.enableCameraView(stream);
-
+      await this.enableEmbeddedVideoView();
+      this.updateDemoGatingState();
       if (camBtn instanceof HTMLButtonElement) {
         camBtn.disabled = false;
         camBtn.textContent = "Stop camera";
       }
-
-      this.updateDemoGatingState();
     } catch (err) {
-      console.error("Camera error:", err);
-      this.logger.setCameraPermission("denied");
-
-      const name = err?.name || "";
-      let msg =
-        "We could not access your camera, so you are seeing the demo without your camera.";
-
-      if (name === "NotAllowedError" || name === "SecurityError") {
-        msg =
-          "Camera permission was blocked. Please allow camera access for this site (lock icon in the address bar), then try again.";
-      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
-        msg =
-          "No usable camera was found (or it is busy). Please close other apps using the camera (Teams/Zoom), then try again.";
-      }
-
-      this.showCameraUnavailable(msg);
-
+      console.error("Embedded demo video failed:", err);
+      this.showCameraUnavailable(
+        "Demo video could not start. Please try again."
+      );
       if (camBtn instanceof HTMLButtonElement) {
         camBtn.disabled = false;
         camBtn.textContent = "Stop camera";
