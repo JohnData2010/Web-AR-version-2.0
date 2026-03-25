@@ -1076,6 +1076,9 @@ export class AppUI {
 
   // Simple in-app permission prompt styled like mobile OS dialogs
   showPermissionPrompt(kind, onAllow, onDeny = null) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-permission-debug',hypothesisId:'P1',location:'src/ui.js:showPermissionPrompt:start',message:'permission prompt created',data:{kind,decisionDelayMs:this.permissionDecisionDelayMs,scope:this.condition?.scope,photo:this.condition?.photo},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const overlay = document.createElement("div");
     overlay.style.cssText = `
       position: fixed;
@@ -1191,6 +1194,9 @@ export class AppUI {
       async () => {
         document.body.removeChild(overlay);
         try {
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-permission-debug',hypothesisId:'P3',location:'src/ui.js:showPermissionPrompt:onAllow:secondary',message:'onAllow invoked',data:{kind,secondaryLabel},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           await onAllow();
         } catch (err) {
           console.error("Permission action failed", err);
@@ -1205,6 +1211,9 @@ export class AppUI {
       async () => {
         document.body.removeChild(overlay);
         try {
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-permission-debug',hypothesisId:'P4',location:'src/ui.js:showPermissionPrompt:onAllow:primary',message:'onAllow invoked',data:{kind,primaryLabel},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           await onAllow();
         } catch (err) {
           console.error("Permission action failed", err);
@@ -1227,6 +1236,9 @@ export class AppUI {
     });
 
     const countdownSec = Math.ceil(this.permissionDecisionDelayMs / 1000);
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/53d0209c-35d3-4927-ba1e-aa88e05e7ed6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a93ced'},body:JSON.stringify({sessionId:'a93ced',runId:'qualtrics-permission-debug',hypothesisId:'P2',location:'src/ui.js:showPermissionPrompt:countdown',message:'countdown computed',data:{countdownSec,permissionDecisionDelayMs:this.permissionDecisionDelayMs},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     actionableButtons.forEach((btn) => {
       const originalLabel = originalButtonLabels.get(btn) || "";
       btn.textContent = `${originalLabel} (in ${countdownSec}s)`;
