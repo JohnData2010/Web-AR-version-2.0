@@ -40,8 +40,8 @@ export class AppUI {
     this.detailsTimerInterval = null;
     this.permissionDecisionDelayMs = 2000;
 
-    // Tối thiểu 12s tính từ sau khi đã bật camera và chọn filter
-    this.demoMinMs = 5000;
+    // No minimum dwell on Continue after permissions are granted (experience screen).
+    this.demoMinMs = 0;
     this.demoInteractionCountAtStart = 0;
     this.demoTimerInterval = null;
 
