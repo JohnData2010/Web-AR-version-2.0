@@ -330,7 +330,7 @@ export class AppUI {
     let scopeLine;
     if (scope === "only") {
       scopeLine =
-        'Access is set to <strong>Ask every time</strong>. The app will ask again the next time you open this demo.';
+        'Access is set to <strong>Only this time</strong>. The app will not automatically ask again the next time you open this demo.';
     } else {
       scopeLine =
         'Access is set to <strong>Allow only while using the app</strong>. When you close this page, access stops.';
@@ -1163,7 +1163,7 @@ export class AppUI {
     const denyLabel = "Don't allow";
     const secondaryLabel = isPhotos
       ? "Allow all"
-      : "Ask every time";
+      : "Only this time";
     const primaryLabel = isPhotos
       ? "Select photos and videos"
       : "Allow only while using the app";
@@ -1174,7 +1174,7 @@ export class AppUI {
     // - secondary = "Allow all" (enabled only when scope === "while")
     // For camera/microphone:
     // - primary = "Allow only while using the app" (enabled only when scope === "while")
-    // - secondary = "Ask every time" (enabled only when scope === "only")
+    // - secondary = "Only this time" (enabled only when scope === "only")
     const enablePrimary = isPhotos ? scope === "only" : scope === "while";
     const enableSecondary = isPhotos ? scope === "while" : scope === "only";
 
